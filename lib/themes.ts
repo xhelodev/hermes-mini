@@ -4,7 +4,11 @@ export type ThemeId =
   | 'discord'
   | 'obsidian'
   | 'whatsapp'
-  | 'telegram';
+  | 'telegram'
+  | 'claude'
+  | 'imessage'
+  | 'spotify'
+  | 'slack';
 
 export type ThemeTokens = {
   bg: string;
@@ -52,7 +56,7 @@ export const THEMES: ThemeDefinition[] = [
   },
   {
     id: 'discord',
-    label: 'Discord',
+    label: 'Blurple',
     tokens: {
       bg: '#313338',
       fg: '#f2f3f5',
@@ -65,7 +69,7 @@ export const THEMES: ThemeDefinition[] = [
   },
   {
     id: 'obsidian',
-    label: 'Obsidian',
+    label: 'Bóveda',
     tokens: {
       bg: '#1e1e1e',
       fg: '#dcddde',
@@ -78,7 +82,7 @@ export const THEMES: ThemeDefinition[] = [
   },
   {
     id: 'whatsapp',
-    label: 'WhatsApp',
+    label: 'Verde',
     tokens: {
       bg: '#0b141a',
       fg: '#e9edef',
@@ -91,7 +95,7 @@ export const THEMES: ThemeDefinition[] = [
   },
   {
     id: 'telegram',
-    label: 'Telegram',
+    label: 'Celeste',
     tokens: {
       bg: '#17212b',
       fg: '#f5f5f5',
@@ -100,6 +104,58 @@ export const THEMES: ThemeDefinition[] = [
       card: '#232e3c',
       pri: '#177fab',
       pfg: '#ffffff',
+    },
+  },
+  {
+    id: 'claude',
+    label: 'Arcilla',
+    tokens: {
+      bg: '#faf9f5',
+      fg: '#141413',
+      mut: '#5e5d59',
+      bd: '#e5e3d6',
+      card: '#f0eee6',
+      pri: '#b55238',
+      pfg: '#ffffff',
+    },
+  },
+  {
+    id: 'imessage',
+    label: 'Azul',
+    tokens: {
+      bg: '#ffffff',
+      fg: '#1c1c1e',
+      mut: '#636366',
+      bd: '#d1d1d6',
+      card: '#e9e9eb',
+      pri: '#0066cc',
+      pfg: '#ffffff',
+    },
+  },
+  {
+    id: 'spotify',
+    label: 'Lima',
+    tokens: {
+      bg: '#121212',
+      fg: '#ffffff',
+      mut: '#b3b3b3',
+      bd: '#282828',
+      card: '#181818',
+      pri: '#1db954',
+      pfg: '#121212',
+    },
+  },
+  {
+    id: 'slack',
+    label: 'Berenjena',
+    tokens: {
+      bg: '#1a0e1c',
+      fg: '#f7f1f8',
+      mut: '#d0b6d4',
+      bd: '#3e2444',
+      card: '#2a162e',
+      pri: '#ecb22e',
+      pfg: '#1a0e1c',
     },
   },
 ];

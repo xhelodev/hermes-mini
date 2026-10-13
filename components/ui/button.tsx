@@ -1,72 +1,63 @@
-import { cva, type VariantProps } from 'class-variance-authority';
-import * as React from 'react';
-import { Pressable } from 'react-native';
+import type { ComponentProps } from 'react';
+import { Pressable, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 
 import { Text } from '@/components/ui/text';
-import { cn } from '@/lib/utils';
 
-const buttonVariants = cva(
-  'flex-row items-center justify-center rounded-xl px-4 py-3 active:opacity-90',
-  {
-    variants: {
-      variant: {
-        default: '',
-        outline: 'border',
-        ghost: 'bg-transparent',
-      },
-      size: {
-        default: 'min-h-12',
-        sm: 'min-h-10 px-3 py-2',
-      },
-    },
-    defaultVariants: {
-      variant: 'default',
-      size: 'default',
-    },
-  },
-);
-
-type ButtonProps = React.ComponentProps<typeof Pressable> &
-  VariantProps<typeof buttonVariants> & {
-    label: string;
-    labelClassName?: string;
-    backgroundColor?: string;
-    borderColor?: string;
-    textColor?: string;
-  };
+type ButtonProps = Omit<ComponentProps<typeof Pressable>, 'style' | 'children'> & {
+  label: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  textColor?: string;
+  variant?: 'default' | 'outline' | 'ghost';
+  size?: 'default' | 'sm';
+  style?: StyleProp<ViewStyle>;
+};
 
 function Button({
-  className,
-  variant,
-  size,
   label,
-  labelClassName,
   backgroundColor,
   borderColor,
   textColor,
+  variant = 'default',
+  size = 'default',
   disabled,
+  style,
   ...props
 }: ButtonProps) {
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
-      className={cn(buttonVariants({ variant, size }), className)}
       style={[
-        variant === 'default' && backgroundColor ? { backgroundColor } : undefined,
-        variant === 'outline' && borderColor ? { borderColor, borderWidth: 1 } : undefined,
-        disabled ? { opacity: 0.5 } : undefined,
+        styles.base,
+        size === 'sm' ? styles.sm : styles.md,
+        variant === 'default' && backgroundColor ? { backgroundColor } : null,
+        variant === 'outline' ? { borderWidth: 1, borderColor } : null,
+        variant === 'ghost' ? styles.ghost : null,
+        disabled ? styles.disabled : null,
+        style,
       ]}
       {...props}
     >
-      <Text
-        className={cn('text-center font-semibold', labelClassName)}
-        style={textColor ? { color: textColor } : undefined}
-      >
-        {label}
-      </Text>
+      <Text style={[styles.label, textColor ? { color: textColor } : null]}>{label}</Text>
     </Pressable>
   );
 }
 
-export { Button, buttonVariants };
+const styles = StyleSheet.create({
+  base: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  md: { minHeight: 48 },
+  sm: { minHeight: 40, paddingHorizontal: 12, paddingVertical: 8 },
+  ghost: { backgroundColor: 'transparent' },
+  disabled: { opacity: 0.5 },
+  label: { textAlign: 'center', fontWeight: '600' },
+});
+
+export { Button };

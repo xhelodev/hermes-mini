@@ -2,15 +2,19 @@ import { assertThemeContrast } from '@/lib/contrast';
 import { THEMES, getThemeById } from '@/lib/themes';
 
 describe('temas Hermes', () => {
-  it('define seis paletas con ids estables', () => {
-    expect(THEMES).toHaveLength(6);
+  it('define diez paletas con ids estables', () => {
+    expect(THEMES).toHaveLength(10);
     expect(THEMES.map((t) => t.label)).toEqual([
       'Zinc claro',
       'Zinc oscuro',
-      'Discord',
-      'Obsidian',
-      'WhatsApp',
-      'Telegram',
+      'Blurple',
+      'Bóveda',
+      'Verde',
+      'Celeste',
+      'Arcilla',
+      'Azul',
+      'Lima',
+      'Berenjena',
     ]);
   });
 
@@ -21,6 +25,6 @@ describe('temas Hermes', () => {
   });
 
   it('resuelve tema por id', () => {
-    expect(getThemeById('telegram').label).toBe('Telegram');
+    expect(getThemeById('telegram').label).toBe('Celeste');
   });
 });

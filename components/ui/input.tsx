@@ -1,50 +1,74 @@
-import * as React from 'react';
-import { TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
 
 import { Text } from '@/components/ui/text';
-import { cn } from '@/lib/utils';
 
 type FieldProps = {
   label: string;
   value: string;
+  onChangeText?: (text: string) => void;
   placeholder?: string;
   secureTextEntry?: boolean;
+  editable?: boolean;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  autoCorrect?: boolean;
+  keyboardType?: 'default' | 'url' | 'email-address' | 'number-pad';
+  multiline?: boolean;
   borderColor: string;
   backgroundColor: string;
   textColor: string;
   mutedColor: string;
-  className?: string;
 };
 
 export function Field({
   label,
   value,
+  onChangeText,
   placeholder,
   secureTextEntry,
+  editable,
+  autoCapitalize,
+  autoCorrect,
+  keyboardType,
+  multiline,
   borderColor,
   backgroundColor,
   textColor,
   mutedColor,
-  className,
 }: FieldProps) {
   return (
-    <View className={cn('mb-4', className)}>
-      <Text className="mb-1.5 text-sm" style={{ color: mutedColor }}>
-        {label}
-      </Text>
+    <View style={styles.field}>
+      <Text style={[styles.label, { color: mutedColor }]}>{label}</Text>
       <TextInput
-        editable={false}
+        editable={editable ?? onChangeText != null}
         value={value}
+        onChangeText={onChangeText}
         placeholder={placeholder}
         secureTextEntry={secureTextEntry}
+        autoCapitalize={autoCapitalize}
+        autoCorrect={autoCorrect}
+        keyboardType={keyboardType}
+        multiline={multiline}
         placeholderTextColor={mutedColor}
-        className="rounded-xl border px-3 py-3 text-base"
-        style={{
-          borderColor,
-          backgroundColor,
-          color: textColor,
-        }}
+        style={[
+          styles.input,
+          multiline ? styles.multiline : null,
+          { borderColor, backgroundColor, color: textColor },
+        ]}
       />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  field: { marginBottom: 16 },
+  label: { marginBottom: 6, fontSize: 14 },
+  input: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    minHeight: 48,
+  },
+  multiline: { minHeight: 96, textAlignVertical: 'top' },
+});
