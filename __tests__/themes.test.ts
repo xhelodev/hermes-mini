@@ -1,7 +1,7 @@
 import { assertThemeContrast } from '@/lib/contrast';
 import { THEMES, getThemeById } from '@/lib/themes';
 
-describe('temas Hermes', () => {
+describe('temas Hermes Go', () => {
   it('define diez paletas con ids estables', () => {
     expect(THEMES).toHaveLength(10);
     expect(THEMES.map((t) => t.label)).toEqual([

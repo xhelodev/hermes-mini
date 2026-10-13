@@ -183,7 +183,7 @@ export function useConnection() {
 export function useHermesClient(): HermesClient {
   const { client } = useConnection();
   if (!client) {
-    throw new Error('Hermes no está conectado');
+    throw new Error('Hermes Go no está conectado');
   }
   return client;
 }

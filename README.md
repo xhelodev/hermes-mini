@@ -1,6 +1,6 @@
-# hermes-apk
+# Hermes Go
 
-Cliente Android para Hermes Agent (Expo SDK 57, TypeScript).
+Cliente de celular para Hermes. Se conecta a la API de Hermes Agent (Expo SDK 57, TypeScript).
 
 ## Desarrollo
 

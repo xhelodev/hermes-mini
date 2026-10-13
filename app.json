@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Hermes",
-    "slug": "hermes-apk",
+    "name": "Hermes Go",
+    "slug": "hermes-go",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "hermes",
+    "scheme": "hermes-go",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hermes.apk"
+      "bundleIdentifier": "com.hermes.go"
     },
     "android": {
-      "package": "com.hermes.apk",
+      "package": "com.hermes.go",
       "adaptiveIcon": {
         "backgroundColor": "#09090b",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -33,15 +33,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Hermes usa tus fotos para adjuntarlas al chat.",
-          "cameraPermission": "Hermes usa la cámara para adjuntar fotos al chat."
+          "photosPermission": "Hermes Go usa tus fotos para adjuntarlas al chat.",
+          "cameraPermission": "Hermes Go usa la cámara para adjuntar fotos al chat."
         }
       ],
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Hermes usa el micrófono para dictar mensajes.",
-          "speechRecognitionPermission": "Hermes convierte tu voz en texto para enviarlo al chat.",
+          "microphonePermission": "Hermes Go usa el micrófono para dictar mensajes.",
+          "speechRecognitionPermission": "Hermes Go convierte tu voz en texto para enviarlo al chat.",
           "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
       ]
