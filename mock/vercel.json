@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "installCommand": "npm install",
+  "buildCommand": "npm test",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ],
+  "functions": {
+    "api/index.mjs": {
+      "maxDuration": 300
+    }
+  }
+}
