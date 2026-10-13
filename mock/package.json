@@ -1,0 +1,16 @@
+{
+  "name": "hermes-mock-gateway",
+  "version": "0.21.6-mock",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node lib/dev-server.mjs",
+    "test": "node --test tests/**/*.test.mjs"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0"
+  }
+}
