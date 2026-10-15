@@ -31,7 +31,9 @@ import { formatByteSize } from '@/lib/format';
 import { useKeyboardInset } from '@/lib/keyboard-inset';
 import {
   describeHermesError,
+  finalAssistantReply,
   HermesError,
+  messageText,
   sseEventName,
   type ChatContentPart,
   type ChatInput,
@@ -354,9 +356,9 @@ function ChatBody() {
       patchAssistant(assistantId, (line) => ({ ...line, text: line.text + delta }));
       return;
     }
-    if (name === 'assistant.completed' && typeof data.content === 'string' && data.content) {
-      const content = data.content;
-      patchAssistant(assistantId, (line) => ({ ...line, text: content }));
+    if (name === 'assistant.completed') {
+      const content = messageText(data.content);
+      if (content) patchAssistant(assistantId, (line) => ({ ...line, text: content }));
       return;
     }
     if (name === 'reasoning.delta' || name === 'reasoning.available') {
@@ -422,6 +424,13 @@ function ChatBody() {
       setError(message);
     }
     if (name === 'run.completed' || name === 'run.cancelled') {
+      const reply = finalAssistantReply(data.messages);
+      if (reply.reasoning) {
+        patchAssistant(assistantId, (line) => withReasoning(line, reply.reasoning, true));
+      }
+      if (name === 'run.completed' && reply.text) {
+        patchAssistant(assistantId, (line) => (line.text.trim() ? line : { ...line, text: reply.text }));
+      }
       setActivity(null);
       setApproval(null);
     }
@@ -473,9 +482,8 @@ function ChatBody() {
       );
     } catch (err) {
       if (!alive.current) return;
-      if (!(err instanceof HermesError && err.code === 'aborted')) {
-        setError(describeHermesError(err));
-      }
+      if (abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted')) return;
+      setError(describeHermesError(err));
     } finally {
       if (!alive.current) return;
       setActivity(null);

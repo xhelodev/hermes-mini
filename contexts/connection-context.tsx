@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Redirect } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
 import { HermesClient, normalizeBaseUrl, type ModelSelection } from '@/lib/hermes';
 
@@ -26,6 +26,25 @@ type ConnectionContextValue = {
 };
 
 const ConnectionContext = createContext<ConnectionContextValue | null>(null);
+
+// SecureStore no existe en web: ahí la clave va al almacenamiento local. En iOS y Android
+// un fallo de SecureStore se propaga para no dejar la clave sin cifrar.
+const SECURE_STORE = Platform.OS !== 'web';
+
+async function readSecret(key: string): Promise<string | null> {
+  if (!SECURE_STORE) return AsyncStorage.getItem(key);
+  return SecureStore.getItemAsync(key).catch(() => null);
+}
+
+async function writeSecret(key: string, value: string): Promise<void> {
+  if (!SECURE_STORE) return AsyncStorage.setItem(key, value);
+  await SecureStore.setItemAsync(key, value);
+}
+
+async function deleteSecret(key: string): Promise<void> {
+  if (!SECURE_STORE) return AsyncStorage.removeItem(key);
+  await SecureStore.deleteItemAsync(key).catch(() => undefined);
+}
 
 function parseModel(raw: string | null): ModelSelection | null {
   if (!raw) return null;
@@ -78,7 +97,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
           AsyncStorage.getItem(URL_KEY),
           AsyncStorage.getItem(MODEL_KEY),
           AsyncStorage.getItem(SESSION_MODELS_KEY),
-          SecureStore.getItemAsync(API_KEY_KEY).catch(() => null),
+          readSecret(API_KEY_KEY),
         ]);
         if (cancelled) return;
         setBaseUrl(storedUrl ?? '');
@@ -107,13 +126,10 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     const normalized = normalizeBaseUrl(nextUrl);
     const key = nextKey.trim();
     if (remember) {
-      await SecureStore.setItemAsync(API_KEY_KEY, key);
+      await writeSecret(API_KEY_KEY, key);
       await AsyncStorage.setItem(URL_KEY, normalized);
     } else {
-      await Promise.all([
-        SecureStore.deleteItemAsync(API_KEY_KEY).catch(() => undefined),
-        AsyncStorage.removeItem(URL_KEY),
-      ]);
+      await Promise.all([deleteSecret(API_KEY_KEY), AsyncStorage.removeItem(URL_KEY)]);
     }
     setBaseUrl(normalized);
     setApiKey(key);
@@ -121,7 +137,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
 
   const clearConnection = useCallback(async () => {
     await Promise.all([
-      SecureStore.deleteItemAsync(API_KEY_KEY).catch(() => undefined),
+      deleteSecret(API_KEY_KEY),
       AsyncStorage.multiRemove([URL_KEY, MODEL_KEY, SESSION_MODELS_KEY]),
     ]);
     setBaseUrl('');

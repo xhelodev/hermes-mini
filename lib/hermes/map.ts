@@ -128,13 +128,46 @@ function isImagePart(record: Record<string, unknown>): boolean {
 function isTextPart(record: Record<string, unknown>): boolean {
   if (isImagePart(record)) return false;
   const type = record.type;
-  return typeof type !== 'string' || !type.trim() || type === 'text' || type === 'input_text';
+  return (
+    typeof type !== 'string' ||
+    !type.trim() ||
+    type === 'text' ||
+    type === 'input_text' ||
+    type === 'output_text' ||
+    type === 'refusal'
+  );
+}
+
+function isReasoningPart(record: Record<string, unknown>): boolean {
+  return (
+    record.type === 'reasoning' ||
+    record.type === 'thinking' ||
+    record.type === 'reasoning_text' ||
+    record.type === 'summary_text'
+  );
 }
 
 function partBody(record: Record<string, unknown>): string {
   if (typeof record.text === 'string') return record.text;
   if (typeof record.reasoning === 'string') return record.reasoning;
+  if (typeof record.thinking === 'string') return record.thinking;
   if (typeof record.content === 'string') return record.content;
+  // Responses: { type: 'reasoning', summary: [{ type: 'summary_text', text }] }
+  if (Array.isArray(record.summary)) {
+    return record.summary
+      .map((item) => {
+        const summary = asRecord(item);
+        return summary ? partBody(summary) : '';
+      })
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  return '';
+}
+
+function textPartBody(record: Record<string, unknown>): string {
+  if (typeof record.text === 'string') return record.text;
+  if (record.type === 'refusal' && typeof record.refusal === 'string') return record.refusal;
   return '';
 }
 
@@ -154,13 +187,13 @@ export function messageText(content: unknown): string {
         if (!record) return '';
         if (isImagePart(record)) return '[imagen]';
         if (!isTextPart(record)) return '';
-        return typeof record.text === 'string' ? record.text : '';
+        return textPartBody(record);
       })
       .filter(Boolean)
       .join('\n');
   }
   const record = asRecord(content);
-  if (record && isTextPart(record) && typeof record.text === 'string') return record.text;
+  if (record && isTextPart(record)) return textPartBody(record);
   return '';
 }
 
@@ -173,14 +206,35 @@ export function messageReasoning(content: unknown, record?: Record<string, unkno
   if (Array.isArray(content)) {
     for (const part of content) {
       const partRecord = asRecord(part);
-      if (!partRecord || isImagePart(partRecord) || isTextPart(partRecord)) continue;
+      if (!partRecord || !isReasoningPart(partRecord)) continue;
       pushChunk(chunks, partBody(partRecord));
     }
   } else {
     const single = asRecord(content);
-    if (single && !isImagePart(single) && !isTextPart(single)) pushChunk(chunks, partBody(single));
+    if (single && isReasoningPart(single)) pushChunk(chunks, partBody(single));
   }
   return chunks.join('\n\n');
+}
+
+/**
+ * Lee `messages` de `run.completed`: en un turno con herramientas hay varios mensajes
+ * del asistente y la respuesta es el último con texto; los anteriores son pasos intermedios.
+ * Solo mira lo posterior al último mensaje del usuario, por si viene el historial completo.
+ */
+export function finalAssistantReply(messages: unknown): { text: string; reasoning: string } {
+  if (!Array.isArray(messages)) return { text: '', reasoning: '' };
+  const lastUser = messages.findLastIndex((row) => asRecord(row)?.role === 'user');
+  let text = '';
+  const chunks: string[] = [];
+  for (const row of messages.slice(lastUser + 1)) {
+    const record = asRecord(row);
+    if (!record || record.role !== 'assistant') continue;
+    const content = messageText(record.content);
+    if (content.trim()) text = content;
+    const reasoning = messageReasoning(record.content, record);
+    if (reasoning) pushChunk(chunks, reasoning);
+  }
+  return { text, reasoning: chunks.join('\n\n') };
 }
 
 function previewFromMessages(value: unknown): string {

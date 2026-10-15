@@ -191,6 +191,66 @@ function CodeBlock({ code, language, theme }: { code: string; language: string; 
   );
 }
 
+function tableRows(tokens: MarkdownToken[]): { header: boolean; cells: MarkdownToken[] }[] {
+  const rows: { header: boolean; cells: MarkdownToken[] }[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    const token = tokens[i];
+    if (token?.type !== 'tr_open') {
+      i += 1;
+      continue;
+    }
+    const close = matchingClose(tokens, i);
+    const cells: MarkdownToken[] = [];
+    let header = false;
+    for (let cell = i + 1; cell < close; cell += 1) {
+      const current = tokens[cell];
+      if (current?.type !== 'th_open' && current?.type !== 'td_open') continue;
+      if (current.type === 'th_open') header = true;
+      const cellClose = matchingClose(tokens, cell);
+      const inline = tokens.slice(cell + 1, cellClose).find((child) => child.type === 'inline');
+      if (inline) cells.push(inline);
+      cell = cellClose;
+    }
+    if (cells.length > 0) rows.push({ header, cells });
+    i = close + 1;
+  }
+  return rows;
+}
+
+function MarkdownTable({ tokens, theme }: { tokens: MarkdownToken[]; theme: ThemeTokens }) {
+  const rows = tableRows(tokens);
+  if (rows.length === 0) return null;
+
+  return (
+    <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>
+      <View style={[styles.table, { borderColor: theme.bd }]}>
+        {rows.map((row, rowIndex) => (
+          <View
+            key={`row-${rowIndex}`}
+            style={[styles.tableRow, rowIndex > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.bd } : null]}
+          >
+            {row.cells.map((cell, cellIndex) => (
+              <View
+                key={`cell-${rowIndex}-${cellIndex}`}
+                style={[
+                  styles.tableCell,
+                  cellIndex > 0 ? { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: theme.bd } : null,
+                  { backgroundColor: row.header ? theme.bg : theme.card },
+                ]}
+              >
+                <Text selectable style={[styles.tableText, row.header ? styles.strong : null, { color: theme.fg }]}>
+                  {readInline(cell.children ?? [], 0, null, `cell-${rowIndex}-${cellIndex}`, theme).nodes}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ))}
+      </View>
+    </ScrollView>
+  );
+}
+
 function renderBlocks(tokens: MarkdownToken[], keyPrefix: string, theme: ThemeTokens): ReactNode[] {
   const nodes: React.ReactNode[] = [];
   let i = 0;
@@ -223,6 +283,12 @@ function renderBlocks(tokens: MarkdownToken[], keyPrefix: string, theme: ThemeTo
         </Text>,
       );
       i += 1;
+      continue;
+    }
+    if (token.type === 'table_open') {
+      const close = matchingClose(tokens, i);
+      nodes.push(<MarkdownTable key={key} tokens={tokens.slice(i + 1, close)} theme={theme} />);
+      i = close + 1;
       continue;
     }
     if (token.type === 'paragraph_open' || token.type === 'heading_open') {
@@ -337,4 +403,8 @@ const styles = StyleSheet.create({
   },
   codeLang: { fontSize: 13 },
   codeText: { fontFamily: MONO, fontSize: 13, padding: 12 },
+  table: { borderWidth: 1, borderRadius: 12, overflow: 'hidden' },
+  tableRow: { flexDirection: 'row' },
+  tableCell: { width: 120, paddingHorizontal: 10, paddingVertical: 8 },
+  tableText: { fontSize: 14 },
 });

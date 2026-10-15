@@ -45,6 +45,17 @@ describe('parseMarkdown', () => {
     expect(fence?.content).toBe('const x = 1\n');
   });
 
+  it('reconoce una tabla', () => {
+    const tokens = parseMarkdown('| A | B |\n|---|---|\n| 1 | 2 |');
+    expect(tokens.some((token) => token.type === 'table_open')).toBe(true);
+    expect(tokens.filter((token) => token.type === 'inline').map((token) => token.content)).toEqual([
+      'A',
+      'B',
+      '1',
+      '2',
+    ]);
+  });
+
   it('reconoce tachado', () => {
     const tokens = parseMarkdown('hola ~~mundo~~');
     const inline = tokens.find((token) => token.type === 'inline');

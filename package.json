@@ -27,6 +27,7 @@
     "expo-status-bar": "~57.0.1",
     "markdown-it": "^15.0.2",
     "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-heroicons": "^4.0.0",
     "react-native-reanimated": "4.5.1",
@@ -49,9 +50,6 @@
     "jest-expo": "~57.0.6",
     "prettier": "^3.6.2",
     "typescript": "~6.0.3"
-  },
-  "overrides": {
-    "react-dom": "19.2.3"
   },
   "private": true
 }

@@ -1,6 +1,7 @@
 import { HermesClient } from '@/lib/hermes/client';
 import { HermesError } from '@/lib/hermes/errors';
 import {
+  finalAssistantReply,
   formatSessionTime,
   mapJob,
   mapJobs,
@@ -111,9 +112,68 @@ describe('mapeo de sesiones', () => {
       ],
     });
     expect(messages[0]?.text).toBe('Listo.\n[imagen]');
-    expect(messages[0]?.reasoning).toBe(
-      'Primero miro el archivo.\n\nDespués comparo.\n\nSigo con la respuesta.',
-    );
+    expect(messages[0]?.reasoning).toBe('Primero miro el archivo.\n\nDespués comparo.');
+  });
+
+  it('trata output_text como respuesta y no como razonamiento', () => {
+    const messages = mapMessages({
+      data: [
+        {
+          id: 'm3',
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', text: 'Armo la tabla.' },
+            { type: 'output_text', text: '| A | B |\n|---|---|\n| 1 | 2 |' },
+          ],
+        },
+      ],
+    });
+    expect(messages[0]?.text).toBe('| A | B |\n|---|---|\n| 1 | 2 |');
+    expect(messages[0]?.reasoning).toBe('Armo la tabla.');
+  });
+
+  it('muestra el rechazo del modelo y lee el resumen de razonamiento de Responses', () => {
+    const messages = mapMessages({
+      data: [
+        {
+          id: 'm4',
+          role: 'assistant',
+          content: [
+            { type: 'reasoning', summary: [{ type: 'summary_text', text: 'Evalúo el pedido.' }] },
+            { type: 'refusal', refusal: 'No puedo ayudar con eso.' },
+          ],
+        },
+      ],
+    });
+    expect(messages[0]?.text).toBe('No puedo ayudar con eso.');
+    expect(messages[0]?.reasoning).toBe('Evalúo el pedido.');
+  });
+
+  it('toma la respuesta final del último mensaje del asistente en run.completed', () => {
+    const reply = finalAssistantReply([
+      { role: 'user', content: 'listá los archivos' },
+      { role: 'assistant', content: 'Voy a listar los archivos.', reasoning: 'Uso ls.' },
+      { role: 'tool', content: '{"files":["a.ts"]}' },
+      {
+        role: 'assistant',
+        content: [{ type: 'output_text', text: 'Hay un archivo: a.ts.' }],
+        reasoning_content: 'Resumo el resultado.',
+      },
+      { role: 'assistant', content: '' },
+    ]);
+    expect(reply.text).toBe('Hay un archivo: a.ts.');
+    expect(reply.reasoning).toBe('Uso ls.\n\nResumo el resultado.');
+    expect(finalAssistantReply(undefined)).toEqual({ text: '', reasoning: '' });
+  });
+
+  it('ignora turnos anteriores si run.completed trae el historial completo', () => {
+    const reply = finalAssistantReply([
+      { role: 'user', content: 'hola' },
+      { role: 'assistant', content: 'Hola.', reasoning: 'Saludo.' },
+      { role: 'user', content: 'dame una tabla' },
+      { role: 'assistant', content: '| A |\n|---|\n| 1 |' },
+    ]);
+    expect(reply).toEqual({ text: '| A |\n|---|\n| 1 |', reasoning: '' });
   });
 
   it('oculta la conversación que se ramificó', () => {
@@ -272,6 +332,29 @@ describe('cliente Hermes', () => {
       provider: 'deepseek',
       model: 'deepseek-v4',
     });
+  });
+
+  it('informa un stream detenido como cancelación y no como caída de red', async () => {
+    const encoder = new TextEncoder();
+    const abort = new AbortController();
+    const fetchImpl = jest.fn(async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: assistant.delta\ndata: {"delta":"Hola"}\n\n'));
+        },
+        pull(controller) {
+          controller.error(new TypeError('Failed to fetch'));
+        },
+      });
+      return new Response(stream, { status: 200 });
+    });
+    const client = new HermesClient({
+      baseUrl: 'http://127.0.0.1:8642',
+      apiKey: 'mock-test-key',
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const pending = client.streamChat('sess_1', 'hola', null, () => abort.abort(), abort.signal);
+    await expect(pending).rejects.toMatchObject({ code: 'aborted' });
   });
 
   it('manda una imagen como parte del input', async () => {

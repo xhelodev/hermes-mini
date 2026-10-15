@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { ScheduleField } from '@/components/schedule-field';
 import { ScreenShell } from '@/components/screen-shell';
@@ -9,6 +9,7 @@ import { Field } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { useHermesClient } from '@/contexts/connection-context';
 import { useTheme } from '@/contexts/theme-context';
+import { confirmAction } from '@/lib/confirm';
 import { describeHermesError, HermesError } from '@/lib/hermes';
 
 type JobEditorProps = {
@@ -108,25 +109,25 @@ export function JobEditor({ jobId }: JobEditorProps) {
 
   function onDelete() {
     if (!jobId) return;
-    Alert.alert('Borrar tarea', 'Se elimina del servidor.', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Borrar',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            setBusy(true);
-            try {
-              await client.deleteJob(jobId);
-              router.back();
-            } catch (err) {
-              setError(jobError(err));
-              setBusy(false);
-            }
-          })();
-        },
-      },
-    ]);
+    const remove = () => {
+      void (async () => {
+        setBusy(true);
+        try {
+          await client.deleteJob(jobId);
+          router.back();
+        } catch (err) {
+          setError(jobError(err));
+          setBusy(false);
+        }
+      })();
+    };
+    confirmAction({
+      title: 'Borrar tarea',
+      message: 'Se elimina del servidor.',
+      confirmLabel: 'Borrar',
+      destructive: true,
+      onConfirm: remove,
+    });
   }
 
   return (

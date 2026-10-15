@@ -359,24 +359,29 @@ export class HermesClient {
     onEvent: (event: SseEvent) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    let response: Response;
     try {
-      response = await this.fetchImpl(joinUrl(this.baseUrl, path), {
-        method: 'POST',
-        headers: this.streamHeaders(),
-        body: JSON.stringify(body),
-        signal,
-      });
+      let response: Response;
+      try {
+        response = await this.fetchImpl(joinUrl(this.baseUrl, path), {
+          method: 'POST',
+          headers: this.streamHeaders(),
+          body: JSON.stringify(body),
+          signal,
+        });
+      } catch (error) {
+        throwIfAborted(error, false);
+      }
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw errorForStatus(response.status, parseJson(text));
+      }
+
+      await readSseResponse(response, onEvent);
     } catch (error) {
-      throwIfAborted(error, false);
+      if (signal?.aborted) throw new HermesError('aborted', 'Cancelado.');
+      throw error;
     }
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw errorForStatus(response.status, parseJson(text));
-    }
-
-    await readSseResponse(response, onEvent);
   }
 
   private streamWithXhr(

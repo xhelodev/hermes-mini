@@ -42,7 +42,8 @@ export function useKeyboardInset(): { height: number; visible: boolean } {
 
     const apply = (event?: KeyboardEvent) => {
       const measure = () => {
-        const metrics = event?.endCoordinates ?? Keyboard.metrics();
+        const fallback = typeof Keyboard.metrics === 'function' ? Keyboard.metrics() : null;
+        const metrics = event?.endCoordinates ?? fallback;
         if (!metrics || metrics.height <= 0) {
           setVisible(false);
           setHeight(0);

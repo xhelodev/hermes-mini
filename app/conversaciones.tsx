@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { CalendarDaysIcon, Cog6ToothIcon, PlusIcon } from 'react-native-heroicons/outline';
 import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenShell } from '@/components/screen-shell';
@@ -9,6 +9,7 @@ import { SessionActions } from '@/components/session-actions';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useHermesClient } from '@/contexts/connection-context';
 import { useTheme } from '@/contexts/theme-context';
+import { confirmAction } from '@/lib/confirm';
 import {
   describeHermesError,
   formatPreview,
@@ -103,58 +104,54 @@ function ConversacionesBody() {
   function onFork() {
     if (!menu) return;
     const source = menu;
-    Alert.alert(
-      'Ramificar conversación',
-      'Ramificar cierra esta conversación en el servidor y abre una copia.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Ramificar',
-          onPress: () => {
-            void (async () => {
-              setBusy(true);
-              try {
-                const copy = await client.forkSession(source.id, `${source.title} (copia)`);
-                setMenu(null);
-                setError(null);
-                router.push({ pathname: '/chat/[id]', params: { id: copy.id } });
-              } catch (err) {
-                setError(describeHermesError(err));
-              } finally {
-                setBusy(false);
-              }
-            })();
-          },
-        },
-      ],
-    );
+    const branch = () => {
+      void (async () => {
+        setBusy(true);
+        try {
+          const copy = await client.forkSession(source.id, `${source.title} (copia)`);
+          setMenu(null);
+          setError(null);
+          router.push({ pathname: '/chat/[id]', params: { id: copy.id } });
+        } catch (err) {
+          setError(describeHermesError(err));
+        } finally {
+          setBusy(false);
+        }
+      })();
+    };
+    confirmAction({
+      title: 'Ramificar conversación',
+      message: 'Ramificar cierra esta conversación en el servidor y abre una copia.',
+      confirmLabel: 'Ramificar',
+      onConfirm: branch,
+    });
   }
 
   function onDelete() {
     if (!menu) return;
     const source = menu;
-    Alert.alert('Borrar conversación', 'Se elimina del servidor.', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Borrar',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            setBusy(true);
-            try {
-              await client.deleteSession(source.id);
-              setSessions((current) => (current ?? []).filter((item) => item.id !== source.id));
-              setMenu(null);
-              setError(null);
-            } catch (err) {
-              setError(describeHermesError(err));
-            } finally {
-              setBusy(false);
-            }
-          })();
-        },
-      },
-    ]);
+    const remove = () => {
+      void (async () => {
+        setBusy(true);
+        try {
+          await client.deleteSession(source.id);
+          setSessions((current) => (current ?? []).filter((item) => item.id !== source.id));
+          setMenu(null);
+          setError(null);
+        } catch (err) {
+          setError(describeHermesError(err));
+        } finally {
+          setBusy(false);
+        }
+      })();
+    };
+    confirmAction({
+      title: 'Borrar conversación',
+      message: 'Se elimina del servidor.',
+      confirmLabel: 'Borrar',
+      destructive: true,
+      onConfirm: remove,
+    });
   }
 
   async function onCreate() {

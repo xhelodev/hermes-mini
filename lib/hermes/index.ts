@@ -1,6 +1,7 @@
 export { HermesClient } from '@/lib/hermes/client';
 export { HermesError, describeHermesError } from '@/lib/hermes/errors';
 export {
+  finalAssistantReply,
   formatPreview,
   formatSessionTime,
   mapJob,
@@ -12,6 +13,7 @@ export {
   mapSkills,
   mapToolsets,
   messageAttachments,
+  messageText,
   sourceLabel,
   type ChatContentPart,
   type ChatInput,
