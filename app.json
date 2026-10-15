@@ -9,10 +9,10 @@
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hermes.go"
+      "bundleIdentifier": "dev.carpincho.hermesgo"
     },
     "android": {
-      "package": "com.hermes.go",
+      "package": "dev.carpincho.hermesgo",
       "adaptiveIcon": {
         "backgroundColor": "#09090b",
         "foregroundImage": "./assets/android-icon-foreground.png",
