@@ -42,12 +42,23 @@
         {
           "microphonePermission": "Hermes Go usa el micrófono para dictar mensajes.",
           "speechRecognitionPermission": "Hermes Go convierte tu voz en texto para enviarlo al chat.",
-          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
         }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "hermesUrl": "",
+      "hermesApiKey": "",
+      "router": {},
+      "eas": {
+        "projectId": "2a7b76b6-b097-4455-bdfc-5540e42a5d87"
+      }
+    },
+    "owner": "chelo91"
   }
 }
