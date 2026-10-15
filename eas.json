@@ -12,6 +12,14 @@
       "env": {
         "EXPO_NO_TELEMETRY": "1"
       }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_NO_TELEMETRY": "1"
+      }
     }
   }
 }

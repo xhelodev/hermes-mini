@@ -41,3 +41,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# EAS local builds (eas build --local writes these in the project root)
+*.apk
+*.aab
+*.ipa
