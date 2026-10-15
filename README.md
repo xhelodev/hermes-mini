@@ -1,4 +1,4 @@
-# Hermes Go
+# Hermes Mini
 
 Cliente de celular para Hermes. Se conecta a la API de Hermes Agent (Expo SDK 57, TypeScript).
 
@@ -46,7 +46,7 @@ npx eas-cli build --profile production --platform android
 
 ### Local
 
-Compila en esta PC. Hace falta Android SDK y JDK. Las credenciales siguen saliendo de EAS (`credentials source: remote`). La primera build de `production` crea el keystore de subida y lo guarda en EAS; esa clave firma las actualizaciones de `dev.carpincho.hermesgo`.
+Compila en esta PC. Hace falta Android SDK y JDK. Las credenciales siguen saliendo de EAS (`credentials source: remote`). La primera build de `production` crea el keystore de subida y lo guarda en EAS; esa clave firma las actualizaciones de `dev.carpincho.hermesmini`.
 
 En Nobara `/tmp` es un tmpfs de ~7,7 GB (el 50% de los 15 GB de RAM), no el SSD. El build local copia el proyecto ahí y, al compilar nativo, llena esa RAM aunque el disco tenga cientos de GB libres. El error es `No space left on device` en una tarea de Gradle (`react-native-gesture-handler` / CMake). Agrandar el tmpfs empuja el build a swap y puede congelar el escritorio.
 

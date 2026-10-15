@@ -1,12 +1,12 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { StreamCursor } from '@/components/stream-status';
 import { Text } from '@/components/ui/text';
 import { useTheme } from '@/contexts/theme-context';
-import { codeForCopy, fenceLanguage, parseMarkdown } from '@/lib/markdown';
+import { codeForCopy, fenceLanguage, parseMarkdown, stableMarkdownLength } from '@/lib/markdown';
 import type { ThemeTokens } from '@/lib/themes';
 
 type MarkdownToken = ReturnType<typeof parseMarkdown>[number];
@@ -352,27 +352,45 @@ function renderBlocks(tokens: MarkdownToken[], keyPrefix: string, theme: ThemeTo
   return nodes;
 }
 
-export function ChatMarkdown({ source, streaming = false }: ChatMarkdownProps) {
-  const { theme } = useTheme();
-  const tokens = useMemo(() => {
+const MarkdownBlocks = memo(function MarkdownBlocks({
+  source,
+  keyPrefix,
+  theme,
+}: {
+  source: string;
+  keyPrefix: string;
+  theme: ThemeTokens;
+}) {
+  const blocks = useMemo(() => {
     try {
-      return parseMarkdown(source);
+      return renderBlocks(parseMarkdown(source), keyPrefix, theme);
     } catch {
       return null;
     }
-  }, [source]);
+  }, [source, keyPrefix, theme]);
 
-  if (!tokens) {
+  if (!blocks) {
     return (
-      <Text selectable style={{ color: theme.tokens.fg }}>
+      <Text selectable style={{ color: theme.fg }}>
         {source}
       </Text>
     );
   }
+  return <>{blocks}</>;
+});
+
+export function ChatMarkdown({ source, streaming = false }: ChatMarkdownProps) {
+  const { theme } = useTheme();
+  // Mientras llega el stream, lo anterior al último párrafo no cambia: se parsea una vez y
+  // solo la cola se vuelve a procesar con cada token. Al terminar se pinta todo junto.
+  const split = streaming ? stableMarkdownLength(source) : source.length;
+  const stable = source.slice(0, split);
+  const tail = source.slice(split);
 
   return (
     <View style={styles.root}>
-      {renderBlocks(tokens, 'md', theme.tokens)}
+      {stable ? <MarkdownBlocks source={stable} keyPrefix="md" theme={theme.tokens} /> : null}
+      {tail ? <MarkdownBlocks source={tail} keyPrefix="tail" theme={theme.tokens} /> : null}
       {streaming ? <StreamCursor color={theme.tokens.fg} /> : null}
     </View>
   );

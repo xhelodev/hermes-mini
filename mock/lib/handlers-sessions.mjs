@@ -50,10 +50,14 @@ export function handleDeleteSession(_req, res, id) {
   res.end();
 }
 
-export function handleSessionMessages(_req, res, id) {
+export function handleSessionMessages(req, res, id) {
   const s = getSession(id);
   if (!s) return sendJson(res, 404, openAiError('Session not found', 'not_found_error'));
-  sendJson(res, 200, { object: 'list', data: s.messages });
+  const params = new URL(req.url || '/', 'http://mock').searchParams;
+  let data = params.get('order') === 'newest' ? [...s.messages].reverse() : s.messages;
+  const limit = Number.parseInt(params.get('limit') || '', 10);
+  if (limit > 0) data = data.slice(0, limit);
+  sendJson(res, 200, { object: 'list', data });
 }
 
 export async function handleSessionChat(_req, res, id, body, { stream = false } = {}) {

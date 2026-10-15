@@ -1,4 +1,30 @@
-import { closeOpenFence, parseMarkdown } from '@/lib/markdown';
+import { closeOpenFence, parseMarkdown, stableMarkdownLength } from '@/lib/markdown';
+
+describe('stableMarkdownLength', () => {
+  it('no hay prefijo estable sin una línea en blanco', () => {
+    expect(stableMarkdownLength('hola\nmundo')).toBe(0);
+  });
+
+  it('corta después de la última línea en blanco', () => {
+    const source = 'uno\n\ndos\n\ntres';
+    expect(source.slice(stableMarkdownLength(source))).toBe('tres');
+  });
+
+  it('no corta dentro de un bloque de código abierto', () => {
+    const source = 'intro\n\n```ts\nconst a = 1\n\nconst b = 2';
+    expect(source.slice(stableMarkdownLength(source))).toBe('```ts\nconst a = 1\n\nconst b = 2');
+  });
+
+  it('corta después de un bloque de código ya cerrado', () => {
+    const source = '```\na\n\nb\n```\n\nsigue';
+    expect(source.slice(stableMarkdownLength(source))).toBe('sigue');
+  });
+
+  it('todo es estable si termina en línea en blanco', () => {
+    const source = 'uno\n\n';
+    expect(stableMarkdownLength(source)).toBe(source.length);
+  });
+});
 
 describe('closeOpenFence', () => {
   it('deja igual un texto sin fence', () => {

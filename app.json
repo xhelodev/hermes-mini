@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Hermes Go",
-    "slug": "hermes-go",
-    "version": "0.1.0",
+    "name": "Hermes Mini",
+    "slug": "hermes-mini",
+    "version": "0.1.1",
     "orientation": "portrait",
-    "scheme": "hermes-go",
+    "scheme": "hermes-mini",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "dev.carpincho.hermesgo"
+      "bundleIdentifier": "dev.carpincho.hermesmini"
     },
     "android": {
-      "package": "dev.carpincho.hermesgo",
+      "package": "dev.carpincho.hermesmini",
       "adaptiveIcon": {
         "backgroundColor": "#09090b",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -33,15 +33,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Hermes Go usa tus fotos para adjuntarlas al chat.",
-          "cameraPermission": "Hermes Go usa la cámara para adjuntar fotos al chat."
+          "photosPermission": "Hermes Mini usa tus fotos para adjuntarlas al chat.",
+          "cameraPermission": "Hermes Mini usa la cámara para adjuntar fotos al chat."
         }
       ],
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "Hermes Go usa el micrófono para dictar mensajes.",
-          "speechRecognitionPermission": "Hermes Go convierte tu voz en texto para enviarlo al chat.",
+          "microphonePermission": "Hermes Mini usa el micrófono para dictar mensajes.",
+          "speechRecognitionPermission": "Hermes Mini convierte tu voz en texto para enviarlo al chat.",
           "androidSpeechServicePackages": [
             "com.google.android.googlequicksearchbox"
           ]
@@ -56,7 +56,7 @@
       "hermesApiKey": "",
       "router": {},
       "eas": {
-        "projectId": "2a7b76b6-b097-4455-bdfc-5540e42a5d87"
+        "projectId": "3767f9af-c5d9-4760-941f-ae7d30817c04"
       }
     },
     "owner": "chelo91"

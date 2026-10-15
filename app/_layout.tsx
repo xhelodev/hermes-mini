@@ -1,8 +1,11 @@
 import { Stack } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ConfirmHost } from '@/components/confirm-host';
 import { ConnectionProvider } from '@/contexts/connection-context';
+import { SwipeActionsProvider } from '@/contexts/swipe-actions-context';
 import { ThemeProvider, useTheme } from '@/contexts/theme-context';
 import { VoiceLocaleProvider } from '@/contexts/voice-locale-context';
 
@@ -22,21 +25,26 @@ function ThemedStack() {
           animation: 'fade',
         }}
       />
+      <ConfirmHost />
     </View>
   );
 }
 
 export default function RootLayout() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <VoiceLocaleProvider>
-          <ConnectionProvider>
-            <ThemedStack />
-          </ConnectionProvider>
-        </VoiceLocaleProvider>
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.flex}>
+      <SafeAreaProvider>
+        <ThemeProvider>
+          <VoiceLocaleProvider>
+            <SwipeActionsProvider>
+              <ConnectionProvider>
+                <ThemedStack />
+              </ConnectionProvider>
+            </SwipeActionsProvider>
+          </VoiceLocaleProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

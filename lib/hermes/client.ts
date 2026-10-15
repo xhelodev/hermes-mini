@@ -36,6 +36,16 @@ type HermesClientOptions = {
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/** Señales del transporte para mostrar en qué va un turno, aparte de sus eventos. */
+export type StreamHooks = {
+  /** Fracción (0–1) del pedido ya enviado. Solo en React Native, donde se usa XHR. */
+  onUploadProgress?: (fraction: number) => void;
+  /** El servidor aceptó el pedido y el stream quedó abierto. */
+  onOpen?: () => void;
+  /** Llegaron bytes, incluidos los comentarios `: keepalive`. */
+  onData?: () => void;
+};
+
 function isReactNative(): boolean {
   return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
 }
@@ -167,6 +177,14 @@ export class HermesClient {
     return mapMessages(payload);
   }
 
+  async getLastMessage(sessionId: string): Promise<HermesMessage | null> {
+    const query = new URLSearchParams({ order: 'newest', limit: '1' });
+    const payload = await this.request(
+      `/api/sessions/${encodeURIComponent(sessionId)}/messages?${query.toString()}`,
+    );
+    return mapMessages(payload)[0] ?? null;
+  }
+
   async listModelOptions(refresh = false): Promise<ModelSelection[]> {
     const path = refresh ? '/api/model/options?refresh=1' : '/api/model/options';
     const payload = await this.request(path);
@@ -281,6 +299,7 @@ export class HermesClient {
     model: Pick<ModelSelection, 'providerId' | 'modelId'> | null,
     onEvent: (event: SseEvent) => void,
     signal?: AbortSignal,
+    hooks: StreamHooks = {},
   ): Promise<void> {
     const body: Record<string, unknown> = { input };
     if (model?.providerId && model.modelId) {
@@ -289,10 +308,10 @@ export class HermesClient {
     }
     const path = `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`;
     if (isReactNative()) {
-      await this.streamWithXhr(path, body, onEvent, signal);
+      await this.streamWithXhr(path, body, onEvent, signal, hooks);
       return;
     }
-    await this.streamWithFetch(path, body, onEvent, signal);
+    await this.streamWithFetch(path, body, onEvent, signal, hooks);
   }
 
   private requireSession(payload: unknown, fallback: string): HermesSession {
@@ -357,7 +376,8 @@ export class HermesClient {
     path: string,
     body: Record<string, unknown>,
     onEvent: (event: SseEvent) => void,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    hooks: StreamHooks,
   ): Promise<void> {
     try {
       let response: Response;
@@ -377,7 +397,8 @@ export class HermesClient {
         throw errorForStatus(response.status, parseJson(text));
       }
 
-      await readSseResponse(response, onEvent);
+      hooks.onOpen?.();
+      await readSseResponse(response, onEvent, hooks.onData);
     } catch (error) {
       if (signal?.aborted) throw new HermesError('aborted', 'Cancelado.');
       throw error;
@@ -388,13 +409,15 @@ export class HermesClient {
     path: string,
     body: Record<string, unknown>,
     onEvent: (event: SseEvent) => void,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    hooks: StreamHooks,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       let seen = 0;
       let buffer = '';
       let settled = false;
+      let opened = false;
 
       const fail = (error: unknown) => {
         if (settled) return;
@@ -420,7 +443,19 @@ export class HermesClient {
       for (const [key, value] of Object.entries(headers)) {
         xhr.setRequestHeader(key, value);
       }
-      xhr.onprogress = consume;
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) hooks.onUploadProgress?.(event.loaded / event.total);
+      };
+      xhr.onreadystatechange = () => {
+        if (opened || xhr.readyState < xhr.HEADERS_RECEIVED) return;
+        if (xhr.status < 200 || xhr.status >= 300) return;
+        opened = true;
+        hooks.onOpen?.();
+      };
+      xhr.onprogress = () => {
+        hooks.onData?.();
+        consume();
+      };
       xhr.onload = () => {
         consume();
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -475,7 +510,11 @@ export class HermesClient {
   }
 }
 
-async function readSseResponse(response: Response, onEvent: (event: SseEvent) => void): Promise<void> {
+async function readSseResponse(
+  response: Response,
+  onEvent: (event: SseEvent) => void,
+  onData?: () => void,
+): Promise<void> {
   const reader = response.body?.getReader();
   if (!reader) {
     const parsed = pushSseChunk('', await response.text());
@@ -488,6 +527,7 @@ async function readSseResponse(response: Response, onEvent: (event: SseEvent) =>
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    onData?.();
     const parsed = pushSseChunk(buffer, decoder.decode(value, { stream: true }));
     buffer = parsed.buffer;
     parsed.events.forEach(onEvent);

@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
 import { Redirect } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { HermesClient, normalizeBaseUrl, type ModelSelection } from '@/lib/hermes';
+import { deleteSecret, readSecret, writeSecret } from '@/lib/secret-store';
+import { SESSION_LIST_STORAGE_KEY } from '@/lib/session-list-cache';
 
 const URL_KEY = '@hermes/server-url';
 const MODEL_KEY = '@hermes/default-model';
@@ -26,25 +27,6 @@ type ConnectionContextValue = {
 };
 
 const ConnectionContext = createContext<ConnectionContextValue | null>(null);
-
-// SecureStore no existe en web: ahí la clave va al almacenamiento local. En iOS y Android
-// un fallo de SecureStore se propaga para no dejar la clave sin cifrar.
-const SECURE_STORE = Platform.OS !== 'web';
-
-async function readSecret(key: string): Promise<string | null> {
-  if (!SECURE_STORE) return AsyncStorage.getItem(key);
-  return SecureStore.getItemAsync(key).catch(() => null);
-}
-
-async function writeSecret(key: string, value: string): Promise<void> {
-  if (!SECURE_STORE) return AsyncStorage.setItem(key, value);
-  await SecureStore.setItemAsync(key, value);
-}
-
-async function deleteSecret(key: string): Promise<void> {
-  if (!SECURE_STORE) return AsyncStorage.removeItem(key);
-  await SecureStore.deleteItemAsync(key).catch(() => undefined);
-}
 
 function parseModel(raw: string | null): ModelSelection | null {
   if (!raw) return null;
@@ -138,7 +120,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   const clearConnection = useCallback(async () => {
     await Promise.all([
       deleteSecret(API_KEY_KEY),
-      AsyncStorage.multiRemove([URL_KEY, MODEL_KEY, SESSION_MODELS_KEY]),
+      AsyncStorage.multiRemove([URL_KEY, MODEL_KEY, SESSION_MODELS_KEY, SESSION_LIST_STORAGE_KEY]),
     ]);
     setBaseUrl('');
     setApiKey('');
@@ -206,7 +188,7 @@ export function useConnection() {
 export function useHermesClient(): HermesClient {
   const { client } = useConnection();
   if (!client) {
-    throw new Error('Hermes Go no está conectado');
+    throw new Error('Hermes Mini no está conectado');
   }
   return client;
 }

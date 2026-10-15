@@ -2,12 +2,15 @@ import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConfirmHost } from '@/components/confirm-host';
 import { Text } from '@/components/ui/text';
 import { useTheme } from '@/contexts/theme-context';
 import type { HermesSession } from '@/lib/hermes';
 
 type SessionActionsProps = {
   session: HermesSession | null;
+  /** Abre el menú directamente en el formulario de renombrar. */
+  startRenaming?: boolean;
   busy: boolean;
   onClose: () => void;
   onRename: (title: string) => void;
@@ -20,12 +23,14 @@ export function SessionActions(props: SessionActionsProps) {
   return (
     <Modal visible={props.session !== null} transparent animationType="fade" onRequestClose={props.onClose}>
       {props.session ? <SessionMenu key={props.session.id} {...props} session={props.session} /> : null}
+      <ConfirmHost />
     </Modal>
   );
 }
 
 function SessionMenu({
   session,
+  startRenaming = false,
   busy,
   onClose,
   onRename,
@@ -36,7 +41,7 @@ function SessionMenu({
   const { theme } = useTheme();
   const t = theme.tokens;
   const insets = useSafeAreaInsets();
-  const [renaming, setRenaming] = useState(false);
+  const [renaming, setRenaming] = useState(startRenaming);
   const [title, setTitle] = useState(session.title);
   const items = [
     { label: 'Renombrar', onPress: () => setRenaming(true) },

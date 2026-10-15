@@ -1,6 +1,6 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -17,12 +17,11 @@ import { ArrowUpIcon, ChevronDownIcon, MicrophoneIcon, PlusIcon } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AttachSheet, type AttachAction } from '@/components/attach-sheet';
-import { ChatMarkdown } from '@/components/chat-markdown';
+import { MessageList, showableImage, type ChatLine } from '@/components/chat-message-list';
 import { MessageActions } from '@/components/message-actions';
 import { ModelSheet } from '@/components/model-sheet';
-import { ReasoningFold, type ReasoningNote } from '@/components/reasoning-fold';
+import type { ReasoningNote } from '@/components/reasoning-fold';
 import { ScreenShell } from '@/components/screen-shell';
-import { ThinkingRow } from '@/components/stream-status';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useConnection, useHermesClient } from '@/contexts/connection-context';
 import { useTheme } from '@/contexts/theme-context';
@@ -42,24 +41,32 @@ import {
 } from '@/lib/hermes';
 import { PickerError, pickCameraImage, pickLibraryImage } from '@/lib/pickers';
 import { useVoiceDictation } from '@/lib/voice-dictation';
+import {
+  finishRun,
+  lastMessageOf,
+  rememberLastMessage,
+  setRunActivity,
+  startRun,
+  useSessionRunning,
+} from '@/lib/session-activity';
+import { createSessionCache } from '@/lib/chat-cache';
+import {
+  advanceStatus,
+  createStreamWatchdog,
+  phaseAfterEvent,
+  toolNameOf,
+  type StreamPhase,
+  type StreamStatus,
+  type StreamWatchdog,
+} from '@/lib/stream-progress';
 import { applyStoredImages, imageFingerprint } from '@/lib/sent-image-index';
 import { discardSentImage, loadSentImages, rememberSentImage, saveOutgoingImage } from '@/lib/sent-images';
 
-type LineAttachment = { label: string; uri?: string };
+type ChatSnapshot = { title: string; lines: ChatLine[] };
 
-const SHOWABLE_IMAGE = /^(data:image\/|https?:\/\/|file:\/\/|content:\/\/|ph:\/\/|assets-library:\/\/)/i;
-
-function showableImage(uri: string | undefined): uri is string {
-  return !!uri && SHOWABLE_IMAGE.test(uri);
-}
-
-type ChatLine = {
-  id: string;
-  kind: 'user' | 'assistant';
-  text: string;
-  attachments: LineAttachment[];
-  notes: ReasoningNote[];
-};
+// Sobrevive a la pantalla: al volver a una conversación se pinta lo último visto y se
+// refresca contra el servidor en segundo plano.
+const chatCache = createSessionCache<ChatSnapshot>();
 
 type PendingAttachment = {
   id: string;
@@ -83,6 +90,12 @@ type OutgoingMessage = {
   files: PendingAttachment[];
   userLineId: string;
 };
+
+/** Texto y razonamiento llegados por stream que todavía no se pintaron. */
+type DeltaBuffer = { assistantId: string; text: string; reasoning: string };
+
+/** Cada cuánto se pintan los tokens acumulados: un render por tanda en vez de uno por token. */
+const DELTA_FLUSH_MS = 50;
 
 const CHOICE_LABELS: Record<string, string> = {
   once: 'Solo esta vez',
@@ -182,11 +195,6 @@ function linesFromMessages(messages: HermesMessage[]): ChatLine[] {
   return lines;
 }
 
-function toolNameOf(data: Record<string, unknown>): string {
-  const name = data.tool_name ?? data.tool;
-  return typeof name === 'string' && name.trim() ? name.trim() : 'herramienta';
-}
-
 function eventText(data: Record<string, unknown>): string {
   for (const key of ['delta', 'text', 'content'] as const) {
     const value = data[key];
@@ -249,9 +257,10 @@ export default function ChatScreen() {
 }
 
 function ChatBody() {
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; title?: string }>();
   const sessionId = oneParam(params.id);
   const client = useHermesClient();
+  const [cached] = useState(() => chatCache.get(client, sessionId));
   const { modelForSession } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
@@ -259,14 +268,21 @@ function ChatBody() {
   const screen = useWindowDimensions();
   const keyboard = useKeyboardInset();
   const scrollRef = useRef<ScrollView>(null);
-  const [title, setTitle] = useState('Conversación');
-  const [lines, setLines] = useState<ChatLine[]>([]);
+  const [title, setTitle] = useState(
+    () => cached?.title || oneParam(params.title) || 'Conversación',
+  );
+  const [lines, setLines] = useState<ChatLine[]>(() => cached?.lines ?? []);
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<PendingAttachment[]>([]);
-  const [activity, setActivity] = useState<string | null>(null);
+  const [status, setStatus] = useState<StreamStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Texto a reenviar desde el aviso de error; solo se ofrece mientras se ve ese mismo error.
+  const [retry, setRetry] = useState<{ error: string; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
+  // Solo va a la caché lo que vino del servidor o de la propia caché, nunca el estado
+  // vacío de una carga fallida.
+  const [synced, setSynced] = useState(Boolean(cached));
   const [sending, setSending] = useState(false);
   const [modelsOpen, setModelsOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -284,13 +300,19 @@ function ChatBody() {
   const queueRef = useRef<OutgoingMessage[]>([]);
   const pumpingRef = useRef(false);
   const sendSeq = useRef(0);
+  const sentDuringLoad = useRef(false);
+  const deltaRef = useRef<DeltaBuffer | null>(null);
+  const deltaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdogRef = useRef<StreamWatchdog | null>(null);
 
+  const runningAnywhere = useSessionRunning(sessionId);
+  const backgroundRun = runningAnywhere && !sending;
   const model = modelForSession(sessionId);
   const canSend = draft.trim().length > 0 || pending.length > 0;
   const { locale: voiceLocale } = useVoiceLocale();
   const dictation = useVoiceDictation({
     locale: voiceLocale,
-    blocked: sending || loading || canSend,
+    blocked: sending || backgroundRun || loading || canSend,
     onTranscript: (text) => {
       void onSend(text);
     },
@@ -298,8 +320,23 @@ function ChatBody() {
     onError: setError,
   });
 
+  const [reloadKey, setReloadKey] = useState(0);
+  const hadBackgroundRun = useRef(false);
+
+  // Si la respuesta empezó en una visita anterior a este chat, al terminar recargamos.
+  useEffect(() => {
+    if (backgroundRun) {
+      hadBackgroundRun.current = true;
+      return;
+    }
+    if (!hadBackgroundRun.current) return;
+    hadBackgroundRun.current = false;
+    setReloadKey((key) => key + 1);
+  }, [backgroundRun]);
+
   useEffect(() => {
     let cancelled = false;
+    sentDuringLoad.current = false;
     const loaded = Promise.all([
       client.getSession(sessionId),
       client.getMessages(sessionId),
@@ -309,7 +346,13 @@ function ChatBody() {
       .then(([session, messages, stored]) => {
         if (cancelled) return;
         setTitle(session.title);
-        setLines(linesFromMessages(applyStoredImages(messages, stored)));
+        // Con la caché en pantalla se puede escribir antes de que llegue esta respuesta, que
+        // todavía no trae ese turno: pisar las líneas borraría el mensaje en curso.
+        if (!sentDuringLoad.current) {
+          setLines(linesFromMessages(applyStoredImages(messages, stored)));
+        }
+        setSynced(true);
+        rememberLastMessage(sessionId, lastMessageOf(messages), session.updatedAt);
         setError(null);
       })
       .catch((err: unknown) => {
@@ -321,14 +364,19 @@ function ChatBody() {
     return () => {
       cancelled = true;
     };
-  }, [client, sessionId]);
+  }, [client, sessionId, reloadKey]);
+
+  useEffect(() => {
+    if (synced) chatCache.set(client, sessionId, { title, lines });
+  }, [client, sessionId, synced, title, lines]);
 
   useEffect(() => {
     alive.current = true;
     return () => {
+      // No cortamos el stream al salir: la respuesta sigue y la lista la muestra en curso.
       alive.current = false;
-      abortRef.current?.abort();
       if (copyTimer.current) clearTimeout(copyTimer.current);
+      if (deltaTimer.current) clearTimeout(deltaTimer.current);
     };
   }, []);
 
@@ -336,6 +384,19 @@ function ChatBody() {
     if (!keyboard.visible) return;
     scrollRef.current?.scrollToEnd({ animated: false });
   }, [keyboard.height, keyboard.visible]);
+
+  function enterPhase(phase: StreamPhase | null) {
+    if (!alive.current) return;
+    setStatus((current) => (phase ? advanceStatus(current, phase, Date.now()) : null));
+  }
+
+  /** Como `enterPhase`, pero solo si la respuesta sigue en alguna de esas etapas. */
+  function advanceFrom(kinds: StreamPhase['kind'][], phase: StreamPhase) {
+    if (!alive.current) return;
+    setStatus((current) =>
+      current && kinds.includes(current.phase.kind) ? advanceStatus(current, phase, Date.now()) : current,
+    );
+  }
 
   function patchAssistant(assistantId: string, patch: (line: ChatLine) => ChatLine) {
     setLines((current) => {
@@ -345,26 +406,55 @@ function ChatBody() {
     });
   }
 
+  function flushDeltas() {
+    if (deltaTimer.current) {
+      clearTimeout(deltaTimer.current);
+      deltaTimer.current = null;
+    }
+    const buffered = deltaRef.current;
+    deltaRef.current = null;
+    if (!buffered || !alive.current) return;
+    patchAssistant(buffered.assistantId, (line) => {
+      const withText = buffered.text ? { ...line, text: line.text + buffered.text } : line;
+      return buffered.reasoning ? withReasoning(withText, buffered.reasoning, false) : withText;
+    });
+  }
+
+  function bufferDelta(assistantId: string, kind: 'text' | 'reasoning', chunk: string) {
+    if (deltaRef.current && deltaRef.current.assistantId !== assistantId) flushDeltas();
+    const buffered = (deltaRef.current ??= { assistantId, text: '', reasoning: '' });
+    buffered[kind] += chunk;
+    deltaTimer.current ??= setTimeout(flushDeltas, DELTA_FLUSH_MS);
+  }
+
   function applyEvent(event: SseEvent, assistantId: string) {
     if (!alive.current) return;
     const name = sseEventName(event);
     const data = event.data;
     if (typeof data.run_id === 'string' && data.run_id) runIdRef.current = data.run_id;
+    const phase = phaseAfterEvent(name, data);
+    if (phase) enterPhase(phase);
     if (name === 'assistant.delta') {
       const delta = typeof data.delta === 'string' ? data.delta : '';
-      if (!delta) return;
-      patchAssistant(assistantId, (line) => ({ ...line, text: line.text + delta }));
+      if (delta) bufferDelta(assistantId, 'text', delta);
       return;
     }
+    if (name === 'reasoning.delta') {
+      const chunk = eventText(data);
+      if (chunk) bufferDelta(assistantId, 'reasoning', chunk);
+      return;
+    }
+    // Lo acumulado va antes que cualquier otro evento, que puede reemplazar el texto.
+    flushDeltas();
     if (name === 'assistant.completed') {
       const content = messageText(data.content);
       if (content) patchAssistant(assistantId, (line) => ({ ...line, text: content }));
       return;
     }
-    if (name === 'reasoning.delta' || name === 'reasoning.available') {
+    if (name === 'reasoning.available') {
       const chunk = eventText(data);
       if (!chunk) return;
-      patchAssistant(assistantId, (line) => withReasoning(line, chunk, name === 'reasoning.available'));
+      patchAssistant(assistantId, (line) => withReasoning(line, chunk, true));
       return;
     }
     if (name === 'assistant.commentary') {
@@ -381,7 +471,6 @@ function ChatBody() {
     }
     if (name === 'tool.started') {
       const tool = toolNameOf(data);
-      setActivity(`Usando ${tool}…`);
       const id = `tool-${assistantId}-${toolCount.current}`;
       toolCount.current += 1;
       patchAssistant(assistantId, (line) => ({
@@ -391,7 +480,6 @@ function ChatBody() {
       return;
     }
     if (name === 'tool.completed' || name === 'tool.failed') {
-      setActivity(null);
       const preview = typeof data.preview === 'string' ? data.preview.trim() : '';
       if (!preview) return;
       const tool = toolNameOf(data);
@@ -408,11 +496,12 @@ function ChatBody() {
         description: typeof data.description === 'string' ? data.description : '',
         choices: choices.length > 0 ? choices : ['once', 'deny'],
       });
-      setActivity('Esperando tu decisión…');
+      // Mientras espera tu decisión el servidor puede no mandar nada: no es una conexión lenta.
+      watchdogRef.current?.pause();
       return;
     }
     if (name === 'run.failed') {
-      setActivity(null);
+      enterPhase(null);
       setApproval(null);
       const raw = data.error;
       const message =
@@ -431,7 +520,7 @@ function ChatBody() {
       if (name === 'run.completed' && reply.text) {
         patchAssistant(assistantId, (line) => (line.text.trim() ? line : { ...line, text: reply.text }));
       }
-      setActivity(null);
+      enterPhase(null);
       setApproval(null);
     }
   }
@@ -460,7 +549,32 @@ function ChatBody() {
     runIdRef.current = null;
     setApproval(null);
     setStreamId(assistantId);
-    setActivity(null);
+    setStatus(null);
+    enterPhase(imageParts.length > 0 ? { kind: 'uploading', percent: null } : { kind: 'waiting' });
+    startRun(sessionId, prose);
+    let reply = '';
+    let lost = false;
+    const watchdog = createStreamWatchdog({
+      onSlow: (slow) => {
+        if (!alive.current) return;
+        setStatus((current) => (current && current.slow !== slow ? { ...current, slow } : current));
+      },
+      onDead: () => {
+        lost = true;
+        abort.abort();
+      },
+    });
+    watchdogRef.current = watchdog;
+    const track = (event: SseEvent) => {
+      const name = sseEventName(event);
+      const data = event.data;
+      if (name === 'assistant.delta' && typeof data.delta === 'string') reply += data.delta;
+      else if (name === 'assistant.completed') reply = messageText(data.content) || reply;
+      else if (name === 'run.completed' && !reply.trim()) reply = finalAssistantReply(data.messages).text;
+      else if (name === 'tool.started') setRunActivity(sessionId, `Usando ${toolNameOf(data)}…`);
+      else if (name === 'approval.request') setRunActivity(sessionId, 'Esperando tu decisión…');
+      else if (name === 'tool.completed' || name === 'tool.failed') setRunActivity(sessionId, null);
+    };
     setLines((current) => {
       const assistant = assistantLine(assistantId, '');
       const index = current.findIndex((line) => line.id === message.userLineId);
@@ -477,16 +591,43 @@ function ChatBody() {
         sessionId,
         payload,
         model ? { providerId: model.providerId, modelId: model.modelId } : null,
-        (event) => applyEvent(event, assistantId),
+        (event) => {
+          track(event);
+          applyEvent(event, assistantId);
+        },
         abort.signal,
+        {
+          onUploadProgress: (fraction) => {
+            watchdog.touch();
+            advanceFrom(
+              ['uploading'],
+              fraction < 1 ? { kind: 'uploading', percent: Math.round(fraction * 100) } : { kind: 'waiting' },
+            );
+          },
+          onOpen: () => {
+            watchdog.touch();
+            advanceFrom(['uploading', 'waiting'], { kind: 'thinking' });
+          },
+          onData: watchdog.touch,
+        },
       );
     } catch (err) {
       if (!alive.current) return;
-      if (abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted')) return;
-      setError(describeHermesError(err));
+      const message = lost
+        ? 'Se perdió la conexión: el servidor dejó de responder.'
+        : abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted')
+          ? null
+          : describeHermesError(err);
+      if (!message) return;
+      setError(message);
+      setRetry(prose ? { error: message, text: prose } : null);
     } finally {
+      watchdog.stop();
+      if (watchdogRef.current === watchdog) watchdogRef.current = null;
+      finishRun(sessionId, reply);
       if (!alive.current) return;
-      setActivity(null);
+      flushDeltas();
+      setStatus(null);
       setStreamId((current) => (current === assistantId ? null : current));
       setLines((current) =>
         current.filter((line) => {
@@ -515,21 +656,23 @@ function ChatBody() {
         return;
       }
       setSending(false);
-      setActivity(null);
+      setStatus(null);
     }
   }
 
   function onSend(retryText?: string) {
     const text = retryText ?? draft;
     const files = retryText ? [] : pending;
-    if (loading || (!text.trim() && files.length === 0)) return;
+    if (loading || backgroundRun || (!text.trim() && files.length === 0)) return;
     setError(null);
     setNotice(null);
+    setRetry(null);
     if (!retryText) {
       setDraft('');
       setPending([]);
       setAttachOpen(false);
     }
+    sentDuringLoad.current = true;
     const userLineId = `user-${Date.now()}-${sendSeq.current}`;
     sendSeq.current += 1;
     setLines((current) => [
@@ -605,7 +748,8 @@ function ChatBody() {
     ]);
   }
 
-  function copyMessage(id: string, text: string) {
+  // Estables para que la lista memoizada no se vuelva a pintar en cada render del chat.
+  const copyMessage = useCallback((id: string, text: string) => {
     void Clipboard.setStringAsync(text).then(() => {
       if (!alive.current) return;
       setCopiedMessageId(id);
@@ -614,7 +758,9 @@ function ChatBody() {
         setCopiedMessageId((current) => (current === id ? null : current));
       }, 1600);
     });
-  }
+  }, []);
+
+  const openMessageMenu = useCallback((id: string, text: string) => setMenu({ id, text }), []);
 
   function haltTurn() {
     const runId = runIdRef.current;
@@ -630,7 +776,8 @@ function ChatBody() {
     try {
       await client.approveRun(approval.runId, choice);
       setApproval(null);
-      setActivity(choice === 'deny' ? null : 'Usando la herramienta…');
+      watchdogRef.current?.resume();
+      enterPhase(choice === 'deny' ? { kind: 'thinking' } : { kind: 'tool', name: 'la herramienta' });
     } catch (err) {
       setError(describeHermesError(err));
     } finally {
@@ -680,108 +827,18 @@ function ChatBody() {
               <ActivityIndicator color={t.pri} />
             </View>
           ) : (
-            <ScrollView
-              ref={scrollRef}
-              style={styles.flex}
-              contentContainerStyle={{ padding: 16, gap: 12, flexGrow: 1 }}
-              keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-            >
-              {lines.length === 0 ? (
-                <Text style={[styles.textSm, { color: t.mut }]}>Escribí el primer mensaje.</Text>
-              ) : null}
-              {lines.map((line) => {
-                const mine = line.kind === 'user';
-                const waiting = !mine && sending && line.id === streamId && !line.text.trim();
-                const streaming = !mine && sending && line.id === streamId && Boolean(line.text.trim());
-                return (
-                  <View
-                    key={line.id}
-                    style={[
-                      styles.bubbleWrap,
-                      mine ? { alignSelf: 'flex-end', maxWidth: '90%' } : { alignSelf: 'stretch' },
-                    ]}
-                  >
-                    {line.attachments.map((item, index) =>
-                      showableImage(item.uri) ? (
-                        <Pressable
-                          key={`${line.id}-file-${index}`}
-                          accessibilityRole="button"
-                          accessibilityLabel="Ver imagen"
-                          onPress={() => setViewer(item.uri ?? null)}
-                        >
-                          <Image
-                            source={{ uri: item.uri }}
-                            accessibilityLabel={item.label}
-                            resizeMode="cover"
-                            style={[styles.preview, { backgroundColor: t.card }]}
-                          />
-                        </Pressable>
-                      ) : (
-                        <View
-                          key={`${line.id}-file-${index}`}
-                          style={[styles.attachment, { borderColor: t.bd, backgroundColor: t.card }]}
-                        >
-                          <Text style={[styles.textSm, { color: t.fg }]}>{item.label}</Text>
-                        </View>
-                      ),
-                    )}
-                    {waiting ? (
-                      <View
-                        style={[
-                          styles.bubble,
-                          styles.assistantBubble,
-                          { backgroundColor: t.card, borderColor: t.bd, borderWidth: 1 },
-                        ]}
-                      >
-                        <ThinkingRow color={t.mut} label={activity ?? 'Pensando…'} />
-                      </View>
-                    ) : line.text ? (
-                      <View
-                        style={[
-                          styles.bubble,
-                          mine ? null : styles.assistantBubble,
-                          {
-                            backgroundColor: mine ? t.pri : t.card,
-                            borderWidth: mine ? 0 : 1,
-                            borderColor: t.bd,
-                          },
-                        ]}
-                      >
-                        {mine ? (
-                          <Text selectable style={{ color: t.pfg }}>
-                            {line.text}
-                          </Text>
-                        ) : (
-                          <ChatMarkdown source={line.text} streaming={streaming} />
-                        )}
-                      </View>
-                    ) : null}
-                    {mine ? null : <ReasoningFold notes={line.notes} />}
-                    {!mine && line.text.trim() ? (
-                      <View style={styles.actions}>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="Copiar mensaje"
-                          onPress={() => copyMessage(line.id, line.text)}
-                        >
-                          <Text style={[styles.textSm, { color: t.mut }]}>
-                            {copiedMessageId === line.id ? 'Copiado' : 'Copiar'}
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel="Más acciones"
-                          onPress={() => setMenu({ id: line.id, text: line.text })}
-                        >
-                          <Text style={[styles.textSm, { color: t.mut }]}>Más</Text>
-                        </Pressable>
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </ScrollView>
+            <MessageList
+              lines={lines}
+              streamId={streamId}
+              sending={sending}
+              status={status}
+              backgroundRun={backgroundRun}
+              copiedId={copiedMessageId}
+              scrollRef={scrollRef}
+              onOpenImage={setViewer}
+              onCopy={copyMessage}
+              onMore={openMessageMenu}
+            />
           )}
           {attachOpen || dictation.listening ? (
             <>
@@ -836,7 +893,20 @@ function ChatBody() {
           <Text style={[styles.status, { color: t.mut }]}>{notice}</Text>
         ) : null}
         {error ? (
-          <Text style={[styles.status, styles.errorText]}>{error}</Text>
+          <View style={styles.errorRow}>
+            <Text style={[styles.textSm, styles.errorText, styles.flex]}>{error}</Text>
+            {retry && retry.error === error ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Reintentar el mensaje"
+                disabled={loading || sending || backgroundRun}
+                onPress={() => onSend(retry.text)}
+                style={[styles.retryBtn, { borderColor: t.bd }]}
+              >
+                <Text style={[styles.textSm, { color: t.fg }]}>Reintentar</Text>
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
         {pending.length > 0 ? (
           <View style={styles.chips}>
@@ -1020,26 +1090,8 @@ const styles = StyleSheet.create({
   },
   modelLabel: { flexShrink: 1 },
   textSm: { fontSize: 14 },
-  bubbleWrap: { maxWidth: '100%' },
-  assistantBubble: { alignSelf: 'stretch' },
-  attachment: {
-    marginBottom: 8,
-    alignSelf: 'flex-end',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  preview: {
-    width: 220,
-    height: 220,
-    marginBottom: 8,
-    alignSelf: 'flex-end',
-    borderRadius: 12,
-  },
   viewer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' },
   viewerHint: { position: 'absolute', color: '#fff', fontSize: 14 },
-  bubble: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
   previewText: { marginTop: 4, fontSize: 13 },
   approval: {
     marginHorizontal: 12,
@@ -1052,11 +1104,18 @@ const styles = StyleSheet.create({
   },
   choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   choice: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8 },
-  actions: { flexDirection: 'row', gap: 16, marginTop: 6, paddingHorizontal: 4 },
   overlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
   sheet: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   status: { paddingHorizontal: 16, paddingBottom: 4, fontSize: 14 },
   errorText: { color: '#ef4444' },
+  errorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
+  retryBtn: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
   chip: {
     flexDirection: 'row',

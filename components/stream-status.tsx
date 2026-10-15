@@ -2,19 +2,36 @@ import { useEffect, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/text';
+import { elapsedLabel } from '@/lib/stream-progress';
 
 type ThinkingRowProps = {
   label: string;
   color: string;
+  /** Inicio de la espera (ms); si se pasa, la fila muestra el tiempo transcurrido. */
+  since?: number;
 };
 
-export function ThinkingRow({ label, color }: ThinkingRowProps) {
+export function ThinkingRow({ label, color, since }: ThinkingRowProps) {
+  const elapsed = useElapsedLabel(since);
   return (
     <View style={styles.row}>
       <ThinkingDots color={color} />
-      <Text style={[styles.label, { color }]}>{label}</Text>
+      <Text style={[styles.label, { color }]}>{elapsed ? `${label} · ${elapsed}` : label}</Text>
     </View>
   );
+}
+
+/** Solo esta fila se vuelve a pintar cada segundo, no la lista ni el chat. */
+function useElapsedLabel(since: number | undefined): string | null {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (since === undefined) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [since]);
+
+  return since === undefined ? null : elapsedLabel(now - since);
 }
 
 function ThinkingDots({ color }: { color: string }) {

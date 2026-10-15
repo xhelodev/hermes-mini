@@ -1,4 +1,4 @@
-export { HermesClient } from '@/lib/hermes/client';
+export { HermesClient, type StreamHooks } from '@/lib/hermes/client';
 export { HermesError, describeHermesError } from '@/lib/hermes/errors';
 export {
   finalAssistantReply,

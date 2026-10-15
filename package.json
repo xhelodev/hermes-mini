@@ -1,6 +1,6 @@
 {
-  "name": "hermes-go",
-  "version": "0.1.0",
+  "name": "hermes-mini",
+  "version": "0.1.1",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -29,6 +29,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-gesture-handler": "~2.32.0",
     "react-native-heroicons": "^4.0.0",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",

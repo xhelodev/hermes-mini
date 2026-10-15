@@ -2,6 +2,8 @@ import { router } from 'expo-router';
 import { useState, type ComponentType } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ChevronRightIcon,
   CpuChipIcon,
   LanguageIcon,
@@ -11,12 +13,15 @@ import type { NumberProp, SvgProps } from 'react-native-svg';
 
 import { ModelSheet } from '@/components/model-sheet';
 import { ScreenShell } from '@/components/screen-shell';
+import { SwipeActionsSheet } from '@/components/swipe-actions-sheet';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { VoiceLocaleSheet } from '@/components/voice-locale-sheet';
 import { RequireConnection, useConnection } from '@/contexts/connection-context';
+import { useSwipeActions } from '@/contexts/swipe-actions-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
+import { swipeActionLabel, type SwipeDirection } from '@/lib/swipe-actions';
 import { THEMES, type ThemeId } from '@/lib/themes';
 
 function ThemePreviewCard({
@@ -96,6 +101,8 @@ function TemasBody() {
   const { label: voiceLabel } = useVoiceLocale();
   const [modelsOpen, setModelsOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const { config: swipe } = useSwipeActions();
+  const [swipeDirection, setSwipeDirection] = useState<SwipeDirection | null>(null);
 
   return (
     <ScreenShell title="Ajustes" onBack={() => router.back()}>
@@ -126,6 +133,18 @@ function TemasBody() {
         onPress={() => setVoiceOpen(true)}
       />
       <SettingsRow
+        icon={ArrowLeftIcon}
+        label="Deslizar a la izquierda"
+        value={swipeActionLabel(swipe.left)}
+        onPress={() => setSwipeDirection('left')}
+      />
+      <SettingsRow
+        icon={ArrowRightIcon}
+        label="Deslizar a la derecha"
+        value={swipeActionLabel(swipe.right)}
+        onPress={() => setSwipeDirection('right')}
+      />
+      <SettingsRow
         icon={PuzzlePieceIcon}
         label="Skills y herramientas"
         onPress={() => router.push('/habilidades')}
@@ -149,6 +168,7 @@ function TemasBody() {
         onClose={() => setModelsOpen(false)}
       />
       <VoiceLocaleSheet visible={voiceOpen} onClose={() => setVoiceOpen(false)} />
+      <SwipeActionsSheet direction={swipeDirection} onClose={() => setSwipeDirection(null)} />
     </ScreenShell>
   );
 }

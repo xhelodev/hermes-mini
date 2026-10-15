@@ -1,22 +1,29 @@
 import { router, useFocusEffect } from 'expo-router';
 import { CalendarDaysIcon, Cog6ToothIcon, PlusIcon } from 'react-native-heroicons/outline';
-import { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenShell } from '@/components/screen-shell';
 import { SessionActions } from '@/components/session-actions';
+import { SessionRow } from '@/components/session-row';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useHermesClient } from '@/contexts/connection-context';
+import { useSwipeActions } from '@/contexts/swipe-actions-context';
 import { useTheme } from '@/contexts/theme-context';
 import { confirmAction } from '@/lib/confirm';
+import { lastMessageIsStale, rememberLastMessage, useSessionActivity } from '@/lib/session-activity';
 import {
-  describeHermesError,
-  formatPreview,
-  formatSessionTime,
-  sourceLabel,
-  type HermesSession,
-} from '@/lib/hermes';
+  cachedSessions,
+  keepUnchanged,
+  loadStoredSessions,
+  rememberSessions,
+} from '@/lib/session-list-cache';
+import type { SwipeActionId } from '@/lib/swipe-actions';
+import { describeHermesError, type HermesSession } from '@/lib/hermes';
+
+/** Al volver a la pantalla no se repite la carga si la anterior fue hace menos de esto. */
+const FOCUS_REFRESH_MS = 2000;
 
 export default function ConversacionesScreen() {
   return (
@@ -31,13 +38,58 @@ function ConversacionesBody() {
   const { theme } = useTheme();
   const t = theme.tokens;
   const insets = useSafeAreaInsets();
-  const [sessions, setSessions] = useState<HermesSession[] | null>(null);
+  const [sessions, setSessions] = useState<HermesSession[] | null>(() => cachedSessions(client) ?? null);
+  // Solo se guarda lo que vino del servidor (o ya estaba en memoria), nunca el `[]` de un error.
+  const [synced, setSynced] = useState(() => cachedSessions(client) !== undefined);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [menu, setMenu] = useState<HermesSession | null>(null);
+  const [menuRenaming, setMenuRenaming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const loaded = useRef(false);
+  const { config: swipe } = useSwipeActions();
+  const inFlight = useRef<Promise<void> | null>(null);
+  const lastLoadAt = useRef(0);
+  const activity = useSessionActivity();
+  const visible = useRef<HermesSession[]>([]);
+  const fetchingLast = useRef(new Set<string>());
+
+  // El `preview` del servidor es el primer mensaje; el último lo pedimos para las filas visibles.
+  const fetchLastMessages = useCallback(
+    (rows: HermesSession[]) => {
+      for (const session of rows) {
+        if (fetchingLast.current.has(session.id)) continue;
+        if (!lastMessageIsStale(session.id, session.updatedAt)) continue;
+        fetchingLast.current.add(session.id);
+        client
+          .getLastMessage(session.id)
+          .then((message) => {
+            const readable =
+              message && (message.role === 'user' || message.role === 'assistant') && message.text.trim();
+            rememberLastMessage(
+              session.id,
+              readable ? { role: message.role, text: message.text } : null,
+              session.updatedAt,
+            );
+          })
+          .catch(() => undefined)
+          .finally(() => fetchingLast.current.delete(session.id));
+      }
+    },
+    [client],
+  );
+  const fetchLastRef = useRef(fetchLastMessages);
+  useEffect(() => {
+    fetchLastRef.current = fetchLastMessages;
+  }, [fetchLastMessages]);
+  // FlatList no admite cambiar este callback entre renders.
+  const [onViewableItemsChanged] = useState(
+    () =>
+      ({ viewableItems }: { viewableItems: ViewToken<HermesSession>[] }) => {
+        visible.current = viewableItems.map((token) => token.item);
+        fetchLastRef.current(visible.current);
+      },
+  );
 
   function replaceSession(next: HermesSession) {
     setSessions((current) => {
@@ -47,23 +99,52 @@ function ConversacionesBody() {
         return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
       });
     });
-    setMenu(next);
+    setMenu((current) => (current?.id === next.id ? next : current));
   }
 
-  const load = useCallback(async () => {
-    if (loaded.current) setRefreshing(true);
-    try {
-      const next = await client.listSessions();
-      setSessions(next);
-      setError(null);
-      loaded.current = true;
-    } catch (err) {
-      setError(describeHermesError(err));
-      setSessions((current) => current ?? []);
-    } finally {
-      setRefreshing(false);
-    }
+  // Arranque en frío: mientras llega el servidor se pinta la última lista guardada.
+  useEffect(() => {
+    let cancelled = false;
+    void loadStoredSessions(client).then((stored) => {
+      if (!cancelled && stored) setSessions((current) => current ?? stored);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [client]);
+
+  useEffect(() => {
+    if (synced && sessions) rememberSessions(client, sessions);
+  }, [client, synced, sessions]);
+
+  /** Refresca en silencio; el spinner de arriba solo aparece si el usuario tiró de la lista. */
+  const load = useCallback(
+    (pull = false) => {
+      if (pull) setRefreshing(true);
+      if (inFlight.current) return inFlight.current;
+      if (!pull && Date.now() - lastLoadAt.current < FOCUS_REFRESH_MS) return Promise.resolve();
+      const run = (async () => {
+        try {
+          const next = await client.listSessions();
+          lastLoadAt.current = Date.now();
+          setSessions((current) => keepUnchanged(current, next));
+          setSynced(true);
+          const shown = new Set(visible.current.map((session) => session.id));
+          fetchLastMessages(next.filter((session) => shown.has(session.id)));
+          setError(null);
+        } catch (err) {
+          setError(describeHermesError(err));
+          setSessions((current) => current ?? []);
+        } finally {
+          inFlight.current = null;
+          setRefreshing(false);
+        }
+      })();
+      inFlight.current = run;
+      return run;
+    },
+    [client, fetchLastMessages],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -86,11 +167,12 @@ function ConversacionesBody() {
     }
   }
 
-  async function onTogglePin() {
-    if (!menu) return;
+  async function onTogglePin(source: HermesSession) {
     setBusy(true);
     try {
-      const next = await client.patchSession(menu.id, { pinned: !menu.pinned });
+      const next = await client.patchSession(source.id, {
+        pinned: !source.pinned,
+      });
       replaceSession(next);
       setMenu(null);
       setError(null);
@@ -101,9 +183,7 @@ function ConversacionesBody() {
     }
   }
 
-  function onFork() {
-    if (!menu) return;
-    const source = menu;
+  function onFork(source: HermesSession) {
     const branch = () => {
       void (async () => {
         setBusy(true);
@@ -127,16 +207,14 @@ function ConversacionesBody() {
     });
   }
 
-  function onDelete() {
-    if (!menu) return;
-    const source = menu;
+  function onDelete(source: HermesSession) {
     const remove = () => {
       void (async () => {
         setBusy(true);
         try {
           await client.deleteSession(source.id);
           setSessions((current) => (current ?? []).filter((item) => item.id !== source.id));
-          setMenu(null);
+          setMenu((current) => (current?.id === source.id ? null : current));
           setError(null);
         } catch (err) {
           setError(describeHermesError(err));
@@ -153,6 +231,43 @@ function ConversacionesBody() {
       onConfirm: remove,
     });
   }
+
+  const openMenu = useCallback((session: HermesSession, renaming = false) => {
+    setMenuRenaming(renaming);
+    setMenu(session);
+  }, []);
+
+  const openSession = useCallback((session: HermesSession) => {
+    router.push({ pathname: '/chat/[id]', params: { id: session.id, title: session.title } });
+  }, []);
+
+  function onSwipeAction(session: HermesSession, action: SwipeActionId) {
+    if (busy) return;
+    switch (action) {
+      case 'delete':
+        onDelete(session);
+        break;
+      case 'pin':
+        void onTogglePin(session);
+        break;
+      case 'rename':
+        openMenu(session, true);
+        break;
+      case 'fork':
+        onFork(session);
+        break;
+    }
+  }
+
+  // Las filas memoizadas reciben una función estable que llama siempre a la versión actual.
+  const swipeActionRef = useRef(onSwipeAction);
+  useEffect(() => {
+    swipeActionRef.current = onSwipeAction;
+  });
+  const handleSwipeAction = useCallback(
+    (session: HermesSession, action: SwipeActionId) => swipeActionRef.current(session, action),
+    [],
+  );
 
   async function onCreate() {
     setCreating(true);
@@ -201,6 +316,8 @@ function ConversacionesBody() {
         <FlatList
           data={sessions ?? []}
           keyExtractor={(item) => item.id}
+          extraData={activity}
+          onViewableItemsChanged={onViewableItemsChanged}
           style={{ flex: 1 }}
           contentContainerStyle={{
             paddingHorizontal: 16,
@@ -211,7 +328,7 @@ function ConversacionesBody() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => {
-                void load();
+                void load(true);
               }}
               tintColor={t.pri}
             />
@@ -224,30 +341,26 @@ function ConversacionesBody() {
           ListEmptyComponent={
             <Text style={[styles.empty, { color: t.mut }]}>Todavía no hay conversaciones.</Text>
           }
-          renderItem={({ item }) => (
-            <Pressable
-              delayLongPress={350}
-              onPress={() => router.push({ pathname: '/chat/[id]', params: { id: item.id } })}
-              onLongPress={() => setMenu(item)}
-              style={[styles.row, { borderBottomColor: t.bd }]}
-            >
-              <View style={styles.rowTop}>
-                <Text style={[styles.title, { color: t.fg }]}>
-                  {item.pinned ? '📌 ' : ''}
-                  {item.title}
-                </Text>
-                <Text style={[styles.time, { color: t.mut }]}>{formatSessionTime(item.updatedAt)}</Text>
-              </View>
-              {sourceLabel(item.source) ? (
-                <Text style={[styles.source, { color: t.mut }]}>{sourceLabel(item.source)}</Text>
-              ) : null}
-              {item.preview ? (
-                <Text numberOfLines={2} style={[styles.preview, { color: t.mut }]}>
-                  {formatPreview(item.preview)}
-                </Text>
-              ) : null}
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const status = activity.running.has(item.id)
+              ? (activity.running.get(item.id) ?? 'Respondiendo…')
+              : null;
+            const last = activity.last.get(item.id)?.message;
+            const preview = last ? `${last.role === 'user' ? 'Vos: ' : ''}${last.text}` : item.preview;
+            return (
+              <SessionRow
+                session={item}
+                status={status}
+                preview={preview}
+                leftAction={swipe.left}
+                rightAction={swipe.right}
+                busy={busy}
+                onOpen={openSession}
+                onMenu={openMenu}
+                onAction={handleSwipeAction}
+              />
+            );
+          }}
         />
       )}
       <Pressable
@@ -259,23 +372,32 @@ function ConversacionesBody() {
         }}
         style={[
           styles.fab,
-          { backgroundColor: t.pri, opacity: creating ? 0.5 : 1, bottom: insets.bottom + 24 },
+          {
+            backgroundColor: t.pri,
+            opacity: creating ? 0.5 : 1,
+            bottom: insets.bottom + 24,
+          },
         ]}
       >
         {creating ? <ActivityIndicator color={t.pfg} /> : <PlusIcon color={t.pfg} size={28} />}
       </Pressable>
       <SessionActions
         session={menu}
+        startRenaming={menuRenaming}
         busy={busy}
         onClose={() => setMenu(null)}
         onRename={(title) => {
           void onRename(title);
         }}
         onTogglePin={() => {
-          void onTogglePin();
+          if (menu) void onTogglePin(menu);
         }}
-        onFork={onFork}
-        onDelete={onDelete}
+        onFork={() => {
+          if (menu) onFork(menu);
+        }}
+        onDelete={() => {
+          if (menu) onDelete(menu);
+        }}
       />
     </ScreenShell>
   );
@@ -286,12 +408,6 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   error: { paddingVertical: 12, fontSize: 14, color: '#ef4444' },
   empty: { paddingVertical: 32 },
-  row: { borderBottomWidth: 1, paddingVertical: 14 },
-  rowTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
-  title: { flex: 1, fontWeight: '600' },
-  time: { fontSize: 14 },
-  source: { marginTop: 2, fontSize: 12 },
-  preview: { marginTop: 4, fontSize: 14 },
   fab: {
     position: 'absolute',
     right: 16,

@@ -334,6 +334,31 @@ describe('cliente Hermes', () => {
     });
   });
 
+  it('avisa cuando el stream se abre y con cada chunk, incluidos los keepalive', async () => {
+    const encoder = new TextEncoder();
+    const fetchImpl = jest.fn(async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(': keepalive\n\n'));
+          controller.enqueue(encoder.encode('event: run.completed\ndata: {"status":"completed"}\n\n'));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    });
+    const client = new HermesClient({
+      baseUrl: 'http://127.0.0.1:8642',
+      apiKey: 'mock-test-key',
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const seen: string[] = [];
+    await client.streamChat('sess_1', 'hola', null, (event) => seen.push(sseEventName(event)), undefined, {
+      onOpen: () => seen.push('open'),
+      onData: () => seen.push('data'),
+    });
+    expect(seen).toEqual(['open', 'data', 'data', 'run.completed']);
+  });
+
   it('informa un stream detenido como cancelación y no como caída de red', async () => {
     const encoder = new TextEncoder();
     const abort = new AbortController();

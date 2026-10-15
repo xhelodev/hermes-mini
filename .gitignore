@@ -35,6 +35,9 @@ yarn-error.*
 .env*.local
 !.env.example
 
+# Android signing passwords. The keystore lives in ~/android-keys.
+/credentials.json
+
 # typescript
 *.tsbuildinfo
 

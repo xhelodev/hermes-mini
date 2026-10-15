@@ -4,12 +4,22 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { CheckIcon } from 'react-native-heroicons/outline';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConnectionHistory } from '@/components/connection-history';
 import { ScreenShell } from '@/components/screen-shell';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { useConnection } from '@/contexts/connection-context';
 import { useTheme } from '@/contexts/theme-context';
+import { confirmAction } from '@/lib/confirm';
+import {
+  clearHistory,
+  loadHistory,
+  readEntryKey,
+  recordConnection,
+  removeEntry,
+  type ConnectionEntry,
+} from '@/lib/connection-history';
 import { envCredentials } from '@/lib/env';
 import { useKeyboardInset } from '@/lib/keyboard-inset';
 import { describeHermesError, HermesClient, HermesError, normalizeBaseUrl } from '@/lib/hermes';
@@ -27,6 +37,7 @@ export default function ConexionScreen() {
   const [remember, setRemember] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  const [history, setHistory] = useState<ConnectionEntry[]>([]);
   const seeded = useRef(false);
   const alive = useRef(true);
 
@@ -35,6 +46,12 @@ export default function ConexionScreen() {
     return () => {
       alive.current = false;
     };
+  }, []);
+
+  useEffect(() => {
+    void loadHistory().then((list) => {
+      if (alive.current) setHistory(list);
+    });
   }, []);
 
   useEffect(() => {
@@ -56,6 +73,8 @@ export default function ConexionScreen() {
       }
       const probe = await new HermesClient({ baseUrl: normalized, apiKey: key }).probe();
       await saveConnection(normalized, key, remember);
+      // El historial es un extra: si falla, igual se entra.
+      await recordConnection(normalized, key, remember).catch(() => undefined);
       setOk(true);
       setMessage(`Conexión OK · Hermes · ${probe.latencyMs} ms`);
       await new Promise((resolve) => setTimeout(resolve, 450));
@@ -70,6 +89,47 @@ export default function ConexionScreen() {
     } finally {
       if (alive.current) setBusy(false);
     }
+  }
+
+  async function onPickEntry(entry: ConnectionEntry) {
+    setMessage(null);
+    setOk(false);
+    setUrl(entry.baseUrl);
+    const saved = await readEntryKey(entry);
+    if (!alive.current) return;
+    setKey(saved ?? '');
+    if (saved) setRemember(true);
+  }
+
+  function onRemoveEntry(entry: ConnectionEntry) {
+    void removeEntry(entry.id)
+      .then((list) => {
+        if (alive.current) setHistory(list);
+      })
+      .catch(() => undefined);
+  }
+
+  function onClearHistory() {
+    confirmAction({
+      title: 'Limpiar historial',
+      message: 'Se borran los servidores recientes y las claves guardadas con ellos.',
+      confirmLabel: 'Limpiar',
+      destructive: true,
+      onConfirm: () => {
+        void clearHistory()
+          .then(() => {
+            if (alive.current) setHistory([]);
+          })
+          .catch(() => undefined);
+      },
+    });
+  }
+
+  let selectedUrl: string | null = null;
+  try {
+    selectedUrl = url.trim() ? normalizeBaseUrl(url) : null;
+  } catch {
+    selectedUrl = null;
   }
 
   return (
@@ -135,6 +195,16 @@ export default function ConexionScreen() {
               </Text>
             </View>
           ) : null}
+          <ConnectionHistory
+            entries={history}
+            selectedUrl={selectedUrl}
+            disabled={busy}
+            onSelect={(entry) => {
+              void onPickEntry(entry);
+            }}
+            onRemove={onRemoveEntry}
+            onClear={onClearHistory}
+          />
         </ScrollView>
         <View
           style={[

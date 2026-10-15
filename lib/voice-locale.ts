@@ -35,7 +35,7 @@ export function voiceFailureMessage(code: string): string | null {
   if (code === 'aborted' || voiceMissedSpeech(code)) return null;
   switch (code) {
     case 'not-allowed':
-      return 'Hermes Go necesita el micrófono para dictar.';
+      return 'Hermes Mini necesita el micrófono para dictar.';
     case 'network':
       return 'El reconocimiento de voz necesita conexión.';
     case 'language-not-supported':

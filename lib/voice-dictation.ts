@@ -130,7 +130,7 @@ export function useVoiceDictation({
       if (!permission.granted) {
         holdingRef.current = false;
         setHolding(false);
-        onNoticeRef.current('Hermes Go necesita el micrófono para dictar.');
+        onNoticeRef.current('Hermes Mini necesita el micrófono para dictar.');
         return;
       }
       startedRef.current = true;
