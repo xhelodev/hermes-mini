@@ -19,14 +19,28 @@ npm test
 
 ## Build Android (EAS)
 
-Perfil `preview` genera un APK (`buildType: apk`, distribución internal) para instalar a mano. Perfil `production` genera un AAB (`buildType: app-bundle`) para Play Store. El AAB no se instala directo en el teléfono.
+El perfil decide el binario. `--local` no lo cambia.
+
+| Perfil | Binario | Para qué |
+| --- | --- | --- |
+| `preview` | APK (`buildType: apk`) | Instalar a mano en el teléfono |
+| `production` | AAB (`buildType: app-bundle`) | Subir a Play Store |
+
+Un build con `--profile preview` siempre escribe `build-*.apk`, aunque la intención sea Play Store. El AAB no se instala directo en el teléfono.
 
 ### Nube
 
 Compila en los servidores de EAS. Hace falta cuenta de Expo; no hace falta Android SDK en la máquina.
 
+APK:
+
 ```bash
 npx eas-cli build --profile preview --platform android
+```
+
+AAB:
+
+```bash
 npx eas-cli build --profile production --platform android
 ```
 
@@ -36,11 +50,19 @@ Compila en esta PC. Hace falta Android SDK y JDK. Las credenciales siguen salien
 
 En Nobara `/tmp` es un tmpfs de ~7,7 GB (el 50% de los 15 GB de RAM), no el SSD. El build local copia el proyecto ahí y, al compilar nativo, llena esa RAM aunque el disco tenga cientos de GB libres. El error es `No space left on device` en una tarea de Gradle (`react-native-gesture-handler` / CMake). Agrandar el tmpfs empuja el build a swap y puede congelar el escritorio.
 
-Hay que apuntar el temporal al disco:
+Hay que apuntar el temporal al disco.
+
+APK:
 
 ```bash
 mkdir -p "$HOME/tmp"
 TMPDIR=$HOME/tmp npx eas-cli build --local --profile preview --platform android
+```
+
+AAB:
+
+```bash
+mkdir -p "$HOME/tmp"
 TMPDIR=$HOME/tmp npx eas-cli build --local --profile production --platform android
 ```
 
