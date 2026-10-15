@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { CheckIcon } from 'react-native-heroicons/outline';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenShell } from '@/components/screen-shell';
@@ -23,6 +24,7 @@ export default function ConexionScreen() {
   const [url, setUrl] = useState(fromEnv.baseUrl);
   const [key, setKey] = useState(fromEnv.apiKey);
   const [busy, setBusy] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
   const seeded = useRef(false);
@@ -53,7 +55,7 @@ export default function ConexionScreen() {
         return;
       }
       const probe = await new HermesClient({ baseUrl: normalized, apiKey: key }).probe();
-      await saveConnection(normalized, key);
+      await saveConnection(normalized, key, remember);
       setOk(true);
       setMessage(`Conexión OK · Hermes · ${probe.latencyMs} ms`);
       await new Promise((resolve) => setTimeout(resolve, 450));
@@ -104,6 +106,27 @@ export default function ConexionScreen() {
             textColor={t.fg}
             mutedColor={t.mut}
           />
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: remember }}
+            accessibilityLabel="Recordar en este teléfono"
+            disabled={busy}
+            onPress={() => setRemember((current) => !current)}
+            style={styles.remember}
+          >
+            <View
+              style={[
+                styles.box,
+                {
+                  borderColor: remember ? t.pri : t.bd,
+                  backgroundColor: remember ? t.pri : t.card,
+                },
+              ]}
+            >
+              {remember ? <CheckIcon color={t.pfg} size={16} /> : null}
+            </View>
+            <Text style={{ color: t.fg }}>Recordar en este teléfono</Text>
+          </Pressable>
           {message ? (
             <View style={[styles.message, { borderColor: t.bd, backgroundColor: t.card }]}>
               <Text style={[styles.messageText, { color: ok ? '#16a34a' : '#ef4444' }]}>
@@ -128,7 +151,11 @@ export default function ConexionScreen() {
               void onSave();
             }}
           />
-          <Text style={[styles.hint, { color: t.mut }]}>La clave queda cifrada en este teléfono.</Text>
+          <Text style={[styles.hint, { color: t.mut }]}>
+            {remember
+              ? 'La clave queda cifrada en este teléfono.'
+              : 'La clave no se guarda. Vas a tener que conectarte de nuevo.'}
+          </Text>
         </View>
       </View>
     </ScreenShell>
@@ -147,5 +174,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   messageText: { fontSize: 14 },
+  remember: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  box: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderRadius: 6,
+  },
   hint: { marginTop: 12, fontSize: 14 },
 });

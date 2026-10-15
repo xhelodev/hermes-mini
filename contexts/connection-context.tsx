@@ -19,7 +19,7 @@ type ConnectionContextValue = {
   client: HermesClient | null;
   defaultModel: ModelSelection | null;
   modelForSession: (sessionId: string) => ModelSelection | null;
-  saveConnection: (baseUrl: string, apiKey: string) => Promise<void>;
+  saveConnection: (baseUrl: string, apiKey: string, remember: boolean) => Promise<void>;
   clearConnection: () => Promise<void>;
   setDefaultModel: (model: ModelSelection) => void;
   setSessionModel: (sessionId: string, model: ModelSelection) => void;
@@ -103,11 +103,18 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     }
   }, [baseUrl, apiKey]);
 
-  const saveConnection = useCallback(async (nextUrl: string, nextKey: string) => {
+  const saveConnection = useCallback(async (nextUrl: string, nextKey: string, remember: boolean) => {
     const normalized = normalizeBaseUrl(nextUrl);
     const key = nextKey.trim();
-    await SecureStore.setItemAsync(API_KEY_KEY, key);
-    await AsyncStorage.setItem(URL_KEY, normalized);
+    if (remember) {
+      await SecureStore.setItemAsync(API_KEY_KEY, key);
+      await AsyncStorage.setItem(URL_KEY, normalized);
+    } else {
+      await Promise.all([
+        SecureStore.deleteItemAsync(API_KEY_KEY).catch(() => undefined),
+        AsyncStorage.removeItem(URL_KEY),
+      ]);
+    }
     setBaseUrl(normalized);
     setApiKey(key);
   }, []);
