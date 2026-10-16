@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConnectionDot } from '@/components/connection-dot';
 import { ScreenShell } from '@/components/screen-shell';
 import { SessionActions } from '@/components/session-actions';
 import { SessionRow } from '@/components/session-row';
@@ -287,6 +288,7 @@ function ConversacionesBody() {
     <ScreenShell
       scroll={false}
       title="Conversaciones"
+      titleAccessory={<ConnectionDot />}
       headerRight={
         <View style={styles.headerActions}>
           <Pressable

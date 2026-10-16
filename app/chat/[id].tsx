@@ -21,6 +21,7 @@ import { MessageList, showableImage, type ChatLine } from '@/components/chat-mes
 import { MessageActions } from '@/components/message-actions';
 import { ModelSheet } from '@/components/model-sheet';
 import type { ReasoningNote } from '@/components/reasoning-fold';
+import { ConnectionDot } from '@/components/connection-dot';
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useConnection, useHermesClient } from '@/contexts/connection-context';
@@ -806,6 +807,7 @@ function ChatBody() {
     <ScreenShell
       scroll={false}
       title={title}
+      titleAccessory={<ConnectionDot />}
       onBack={() => router.back()}
       headerRight={
         <Pressable
