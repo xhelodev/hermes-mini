@@ -46,7 +46,17 @@
             "com.google.android.googlequicksearchbox"
           ]
         }
-      ]
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
+          }
+        }
+      ],
+      "./plugins/with-android-r8-optimize"
     ],
     "experiments": {
       "typedRoutes": true
