@@ -2,6 +2,7 @@ import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { ArrowPathIcon, ArrowUpOnSquareIcon, ClipboardDocumentIcon } from 'react-native-heroicons/outline';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 
 type MessageActionsProps = {
@@ -15,16 +16,17 @@ type MessageActionsProps = {
 export function MessageActions({ visible, onClose, onShare, onCopy, onRetry }: MessageActionsProps) {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   const items = [
-    { label: 'Compartir a otra app', Icon: ArrowUpOnSquareIcon, onPress: onShare },
-    { label: 'Copiar texto', Icon: ClipboardDocumentIcon, onPress: onCopy },
-    { label: 'Reintentar respuesta', Icon: ArrowPathIcon, onPress: onRetry },
+    { label: str.messageMenu.share, Icon: ArrowUpOnSquareIcon, onPress: onShare },
+    { label: str.messageMenu.copy, Icon: ClipboardDocumentIcon, onPress: onCopy },
+    { label: str.messageMenu.retry, Icon: ArrowPathIcon, onPress: onRetry },
   ];
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.45)' }]}>
-        <Pressable accessibilityLabel="Cerrar" style={styles.dismiss} onPress={onClose} />
+        <Pressable accessibilityLabel={str.common.close} style={styles.dismiss} onPress={onClose} />
         <View style={[styles.menu, { backgroundColor: t.card }]}>
           {items.map((item, index) => (
             <Pressable

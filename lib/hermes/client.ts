@@ -18,6 +18,7 @@ import {
 } from '@/lib/hermes/map';
 import { pushSseChunk, type SseEvent } from '@/lib/hermes/sse';
 import { joinUrl } from '@/lib/hermes/url';
+import { getLanguage, strings } from '@/lib/i18n';
 
 type RequestOptions = {
   method?: string;
@@ -63,7 +64,7 @@ function errorMessage(body: unknown, fallback: string): string {
   if (typeof nested?.message === 'string' && nested.message.trim()) return nested.message;
   if (typeof record?.error === 'string' && record.error.trim()) {
     return record.error === 'no_text'
-      ? 'Ese archivo no tiene texto para leer.'
+      ? strings().errors.noText
       : record.error;
   }
   if (typeof record?.message === 'string' && record.message.trim()) return record.message;
@@ -71,7 +72,7 @@ function errorMessage(body: unknown, fallback: string): string {
 }
 
 function errorForStatus(status: number, body: unknown): HermesError {
-  const message = errorMessage(body, `Error HTTP ${status}`);
+  const message = errorMessage(body, strings().errors.http(status));
   if (status === 401 || status === 403) return new HermesError('unauthorized', message, status);
   if (status === 404) return new HermesError('not_found', message, status);
   if (status === 408) return new HermesError('timeout', message, status);
@@ -86,9 +87,9 @@ function throwIfAborted(error: unknown, timedOut: boolean): never {
   if (error instanceof HermesError) throw error;
   const name = error instanceof Error ? error.name : '';
   if (name === 'AbortError') {
-    throw new HermesError(timedOut ? 'timeout' : 'aborted', timedOut ? 'Tiempo de espera agotado.' : 'Cancelado.');
+    throw new HermesError(timedOut ? 'timeout' : 'aborted', timedOut ? strings().errors.timedOut : strings().errors.cancelled);
   }
-  throw new HermesError('down', 'No se pudo conectar con el servidor.');
+  throw new HermesError('down', strings().errors.down);
 }
 
 export class HermesClient {
@@ -143,12 +144,12 @@ export class HermesClient {
     });
   }
 
-  async createSession(title = 'Nueva conversación'): Promise<HermesSession> {
+  async createSession(title = strings().sessions.newTitle): Promise<HermesSession> {
     try {
       return await this.insertSession(title);
     } catch (error) {
       if (error instanceof HermesError && error.status === 400) {
-        const stamp = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+        const stamp = new Date().toLocaleTimeString(getLanguage(), { hour: '2-digit', minute: '2-digit' });
         return this.insertSession(`${title} ${stamp}`);
       }
       throw error;
@@ -159,7 +160,7 @@ export class HermesClient {
     const payload = await this.request(`/api/sessions/${encodeURIComponent(sessionId)}`);
     const session = mapSession(payload);
     if (!session) {
-      throw new HermesError('bad_response', 'El servidor no devolvió la conversación.');
+      throw new HermesError('bad_response', strings().errors.missingSession);
     }
     return session;
   }
@@ -199,7 +200,7 @@ export class HermesClient {
       method: 'PATCH',
       body: patch,
     });
-    return this.requireSession(payload, 'El servidor no devolvió la conversación.');
+    return this.requireSession(payload, strings().errors.missingSession);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -211,7 +212,7 @@ export class HermesClient {
       method: 'POST',
       body: { title },
     });
-    return this.requireSession(payload, 'El servidor no devolvió la copia.');
+    return this.requireSession(payload, strings().errors.missingCopy);
   }
 
   async lockSessionModel(
@@ -322,7 +323,7 @@ export class HermesClient {
 
   private requireJob(payload: unknown): HermesJob {
     const job = mapJob(payload);
-    if (!job) throw new HermesError('bad_response', 'El servidor no devolvió la tarea.');
+    if (!job) throw new HermesError('bad_response', strings().errors.missingJob);
     return job;
   }
 
@@ -333,7 +334,7 @@ export class HermesClient {
     });
     const session = mapSession(payload);
     if (!session) {
-      throw new HermesError('bad_response', 'El servidor no devolvió la conversación nueva.');
+      throw new HermesError('bad_response', strings().errors.missingNewSession);
     }
     return session;
   }
@@ -400,7 +401,7 @@ export class HermesClient {
       hooks.onOpen?.();
       await readSseResponse(response, onEvent, hooks.onData);
     } catch (error) {
-      if (signal?.aborted) throw new HermesError('aborted', 'Cancelado.');
+      if (signal?.aborted) throw new HermesError('aborted', strings().errors.cancelled);
       throw error;
     }
   }
@@ -464,8 +465,8 @@ export class HermesClient {
         }
         fail(errorForStatus(xhr.status, parseJson(xhr.responseText)));
       };
-      xhr.onerror = () => fail(new HermesError('down', 'No se pudo conectar con el servidor.'));
-      xhr.onabort = () => fail(new HermesError('aborted', 'Cancelado.'));
+      xhr.onerror = () => fail(new HermesError('down', strings().errors.down));
+      xhr.onabort = () => fail(new HermesError('aborted', strings().errors.cancelled));
       if (signal) {
         if (signal.aborted) {
           xhr.abort();

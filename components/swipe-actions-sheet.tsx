@@ -3,9 +3,10 @@ import { CheckIcon } from 'react-native-heroicons/outline';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useSwipeActions } from '@/contexts/swipe-actions-context';
 import { useTheme } from '@/contexts/theme-context';
-import { SWIPE_ACTIONS, type SwipeActionId, type SwipeDirection } from '@/lib/swipe-actions';
+import { SWIPE_ACTIONS, swipeActionLabel, type SwipeActionId, type SwipeDirection } from '@/lib/swipe-actions';
 
 type SwipeActionsSheetProps = {
   direction: SwipeDirection | null;
@@ -16,6 +17,7 @@ export function SwipeActionsSheet({ direction, onClose }: SwipeActionsSheetProps
   const { config, setAction } = useSwipeActions();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   const insets = useSafeAreaInsets();
 
   function choose(id: SwipeActionId) {
@@ -26,22 +28,22 @@ export function SwipeActionsSheet({ direction, onClose }: SwipeActionsSheetProps
   return (
     <Modal visible={direction !== null} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <Pressable accessibilityLabel="Cerrar" style={styles.dismiss} onPress={onClose} />
+        <Pressable accessibilityLabel={str.common.close} style={styles.dismiss} onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: t.bg, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.handle, { backgroundColor: t.bd }]} />
           <Text style={[styles.title, { color: t.fg }]}>
-            {direction === 'left' ? 'Deslizar a la izquierda' : 'Deslizar a la derecha'}
+            {direction === 'left' ? str.settings.swipeLeft : str.settings.swipeRight}
           </Text>
           <Text style={[styles.subtitle, { color: t.mut }]}>
-            Qué pasa al deslizar una conversación en la lista.
+            {str.settings.swipeHint}
           </Text>
           <ScrollView>
             {SWIPE_ACTIONS.map((item) => {
-              const active = direction !== null && config[direction] === item.id;
+              const active = direction !== null && config[direction] === item;
               return (
                 <Pressable
-                  key={item.id}
-                  onPress={() => choose(item.id)}
+                  key={item}
+                  onPress={() => choose(item)}
                   style={[
                     styles.option,
                     {
@@ -50,7 +52,7 @@ export function SwipeActionsSheet({ direction, onClose }: SwipeActionsSheetProps
                     },
                   ]}
                 >
-                  <Text style={[styles.optionLabel, { color: t.fg }]}>{item.label}</Text>
+                  <Text style={[styles.optionLabel, { color: t.fg }]}>{swipeActionLabel(item)}</Text>
                   {active ? <CheckIcon color={t.fg} size={20} /> : null}
                 </Pressable>
               );

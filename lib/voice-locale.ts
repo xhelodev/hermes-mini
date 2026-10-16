@@ -1,3 +1,5 @@
+import { strings } from '@/lib/i18n';
+
 export const VOICE_LOCALES = [
   { id: 'es-ES', label: 'Español (España)' },
   { id: 'es-MX', label: 'Español (México)' },
@@ -14,9 +16,29 @@ export const DEFAULT_VOICE_LOCALE: VoiceLocaleId = 'es-ES';
 
 export const VOICE_LOCALE_STORAGE_KEY = '@hermes/voice-locale';
 
-export function resolveVoiceLocale(stored: string | null | undefined): VoiceLocaleId {
+export function resolveVoiceLocale(
+  stored: string | null | undefined,
+  fallback: VoiceLocaleId = DEFAULT_VOICE_LOCALE,
+): VoiceLocaleId {
   const match = VOICE_LOCALES.find((item) => item.id === stored);
-  return match?.id ?? DEFAULT_VOICE_LOCALE;
+  return match?.id ?? fallback;
+}
+
+/**
+ * Idioma de voz que más se parece a los del teléfono (BCP 47, en orden de preferencia):
+ * primero la variante exacta (`es-AR`), si no la primera del mismo idioma (`en-GB` → `en-US`).
+ */
+export function voiceLocaleForDevice(tags: readonly string[]): VoiceLocaleId {
+  const normalized = tags.map((tag) => tag.trim().replace('_', '-').toLowerCase());
+  for (const tag of normalized) {
+    const exact = VOICE_LOCALES.find((item) => item.id.toLowerCase() === tag);
+    if (exact) return exact.id;
+    const language = tag.split('-')[0];
+    const sameLanguage = VOICE_LOCALES.find((item) => item.id.toLowerCase().split('-')[0] === language);
+    if (sameLanguage) return sameLanguage.id;
+  }
+  // Sin coincidencias la app queda en inglés (ver `FALLBACK_LANGUAGE`).
+  return 'en-US';
 }
 
 export function voiceLocaleLabel(id: string): string {
@@ -33,14 +55,15 @@ export function voiceMissedSpeech(code: string): boolean {
 
 export function voiceFailureMessage(code: string): string | null {
   if (code === 'aborted' || voiceMissedSpeech(code)) return null;
+  const text = strings().voice;
   switch (code) {
     case 'not-allowed':
-      return 'Hermes Mini necesita el micrófono para dictar.';
+      return text.needsMicrophone;
     case 'network':
-      return 'El reconocimiento de voz necesita conexión.';
+      return text.needsNetwork;
     case 'language-not-supported':
-      return 'Ese idioma de voz no está en este teléfono.';
+      return text.languageMissing;
     default:
-      return 'No se pudo dictar el mensaje.';
+      return text.failed;
   }
 }

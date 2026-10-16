@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useHermesClient } from '@/contexts/connection-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { describeHermesError, HermesError, type HermesSkill, type HermesToolset } from '@/lib/hermes';
 
@@ -20,6 +21,7 @@ function HabilidadesBody() {
   const client = useHermesClient();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const text = useStrings().skills;
   const [skills, setSkills] = useState<HermesSkill[] | null>(null);
   const [toolsets, setToolsets] = useState<HermesToolset[] | null>(null);
   const [skillsError, setSkillsError] = useState<string | null>(null);
@@ -36,7 +38,7 @@ function HabilidadesBody() {
       } catch (err) {
         if (!cancelled) {
           setSkills([]);
-          setSkillsError(sectionError(err, 'El servidor no pudo listar las skills.'));
+          setSkillsError(sectionError(err, text.skillsFailed));
         }
       }
     })();
@@ -49,22 +51,22 @@ function HabilidadesBody() {
       } catch (err) {
         if (!cancelled) {
           setToolsets([]);
-          setToolsetsError(sectionError(err, 'El servidor no pudo listar las herramientas.'));
+          setToolsetsError(sectionError(err, text.toolsFailed));
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, text]);
 
   return (
-    <ScreenShell title="Skills y herramientas" onBack={() => router.back()}>
-      <Text style={[styles.heading, { color: t.fg }]}>Skills</Text>
+    <ScreenShell title={text.title} onBack={() => router.back()}>
+      <Text style={[styles.heading, { color: t.fg }]}>{text.skills}</Text>
       {skills === null ? <ActivityIndicator color={t.pri} /> : null}
       {skillsError ? <Text style={styles.error}>{skillsError}</Text> : null}
       {skills && skills.length === 0 && !skillsError ? (
-        <Text style={{ color: t.mut }}>El servidor no devolvió skills.</Text>
+        <Text style={{ color: t.mut }}>{text.noSkills}</Text>
       ) : null}
       {(skills ?? []).map((skill) => (
         <View key={skill.name} style={[styles.card, { borderColor: t.bd, backgroundColor: t.card }]}>
@@ -75,17 +77,17 @@ function HabilidadesBody() {
           ) : null}
         </View>
       ))}
-      <Text style={[styles.heading, { color: t.fg }]}>Herramientas</Text>
+      <Text style={[styles.heading, { color: t.fg }]}>{text.tools}</Text>
       {toolsets === null ? <ActivityIndicator color={t.pri} /> : null}
       {toolsetsError ? <Text style={styles.error}>{toolsetsError}</Text> : null}
       {toolsets && toolsets.length === 0 && !toolsetsError ? (
-        <Text style={{ color: t.mut }}>El servidor no devolvió herramientas.</Text>
+        <Text style={{ color: t.mut }}>{text.noTools}</Text>
       ) : null}
       {(toolsets ?? []).map((toolset) => (
         <View key={toolset.name} style={[styles.card, { borderColor: t.bd, backgroundColor: t.card }]}>
           <View style={styles.row}>
             <Text style={[styles.flex, { color: t.fg }]}>{toolset.label}</Text>
-            <Text style={{ color: t.mut }}>{toolset.enabled ? 'Activo' : 'Inactivo'}</Text>
+            <Text style={{ color: t.mut }}>{toolset.enabled ? text.enabled : text.disabled}</Text>
           </View>
           {toolset.description ? (
             <Text style={[styles.meta, { color: t.mut }]}>{toolset.description}</Text>

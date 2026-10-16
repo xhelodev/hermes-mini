@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { KeyIcon, ServerIcon, XMarkIcon } from 'react-native-heroicons/outline';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { displayUrl, formatLastUsed, type ConnectionEntry } from '@/lib/connection-history';
 
@@ -26,6 +27,7 @@ export function ConnectionHistory({
 }: ConnectionHistoryProps) {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   // Fijo mientras la pantalla está abierta: alcanza para "hace 5 min".
   const [now] = useState(() => Date.now());
   if (entries.length === 0) return null;
@@ -33,15 +35,15 @@ export function ConnectionHistory({
   return (
     <View style={styles.section}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: t.mut }]}>Conexiones recientes</Text>
+        <Text style={[styles.title, { color: t.mut }]}>{str.history.title}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Limpiar historial de conexiones"
+          accessibilityLabel={str.history.clearLabel}
           disabled={disabled}
           onPress={onClear}
           hitSlop={8}
         >
-          <Text style={[styles.clear, { color: t.pri }]}>Limpiar</Text>
+          <Text style={[styles.clear, { color: t.pri }]}>{str.history.clear}</Text>
         </Pressable>
       </View>
       <View style={[styles.list, { borderColor: t.bd, backgroundColor: t.card }]}>
@@ -57,7 +59,7 @@ export function ConnectionHistory({
             >
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Usar ${displayUrl(entry.baseUrl)}`}
+                accessibilityLabel={str.history.use(displayUrl(entry.baseUrl))}
                 accessibilityState={{ selected }}
                 disabled={disabled}
                 onPress={() => onSelect(entry)}
@@ -76,7 +78,7 @@ export function ConnectionHistory({
                       <>
                         <Text style={[styles.metaText, { color: t.mut }]}>·</Text>
                         <KeyIcon color={t.mut} size={12} />
-                        <Text style={[styles.metaText, { color: t.mut }]}>clave guardada</Text>
+                        <Text style={[styles.metaText, { color: t.mut }]}>{str.history.keySaved}</Text>
                       </>
                     ) : null}
                   </View>
@@ -84,7 +86,7 @@ export function ConnectionHistory({
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Quitar ${displayUrl(entry.baseUrl)} del historial`}
+                accessibilityLabel={str.history.remove(displayUrl(entry.baseUrl))}
                 disabled={disabled}
                 onPress={() => onRemove(entry)}
                 hitSlop={8}

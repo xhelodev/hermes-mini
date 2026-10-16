@@ -3,6 +3,7 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.test.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    '^expo-localization$': '<rootDir>/__tests__/__mocks__/expo-localization.ts',
   },
   transform: {
     '^.+\\.(ts|tsx)$': [

@@ -10,6 +10,7 @@ import { SessionRow } from '@/components/session-row';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useHermesClient } from '@/contexts/connection-context';
 import { useSwipeActions } from '@/contexts/swipe-actions-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { confirmAction } from '@/lib/confirm';
 import { lastMessageIsStale, rememberLastMessage, useSessionActivity } from '@/lib/session-activity';
@@ -37,6 +38,8 @@ function ConversacionesBody() {
   const client = useHermesClient();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
+  const text = str.sessions;
   const insets = useSafeAreaInsets();
   const [sessions, setSessions] = useState<HermesSession[] | null>(() => cachedSessions(client) ?? null);
   // Solo se guarda lo que vino del servidor (o ya estaba en memoria), nunca el `[]` de un error.
@@ -188,7 +191,7 @@ function ConversacionesBody() {
       void (async () => {
         setBusy(true);
         try {
-          const copy = await client.forkSession(source.id, `${source.title} (copia)`);
+          const copy = await client.forkSession(source.id, text.copyTitle(source.title));
           setMenu(null);
           setError(null);
           router.push({ pathname: '/chat/[id]', params: { id: copy.id } });
@@ -200,9 +203,9 @@ function ConversacionesBody() {
       })();
     };
     confirmAction({
-      title: 'Ramificar conversación',
-      message: 'Ramificar cierra esta conversación en el servidor y abre una copia.',
-      confirmLabel: 'Ramificar',
+      title: text.forkTitle,
+      message: text.forkMessage,
+      confirmLabel: str.swipe.actions.fork,
       onConfirm: branch,
     });
   }
@@ -224,9 +227,9 @@ function ConversacionesBody() {
       })();
     };
     confirmAction({
-      title: 'Borrar conversación',
-      message: 'Se elimina del servidor.',
-      confirmLabel: 'Borrar',
+      title: text.deleteTitle,
+      message: str.common.deleteFromServer,
+      confirmLabel: str.common.delete,
       destructive: true,
       onConfirm: remove,
     });
@@ -286,12 +289,12 @@ function ConversacionesBody() {
   return (
     <ScreenShell
       scroll={false}
-      title="Conversaciones"
+      title={text.title}
       headerRight={
         <View style={styles.headerActions}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Tareas programadas"
+            accessibilityLabel={str.jobs.title}
             hitSlop={8}
             onPress={() => router.push('/jobs')}
           >
@@ -299,7 +302,7 @@ function ConversacionesBody() {
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Ajustes"
+            accessibilityLabel={str.settings.title}
             hitSlop={8}
             onPress={() => router.push('/temas')}
           >
@@ -339,14 +342,14 @@ function ConversacionesBody() {
             ) : null
           }
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: t.mut }]}>Todavía no hay conversaciones.</Text>
+            <Text style={[styles.empty, { color: t.mut }]}>{text.empty}</Text>
           }
           renderItem={({ item }) => {
             const status = activity.running.has(item.id)
-              ? (activity.running.get(item.id) ?? 'Respondiendo…')
+              ? (activity.running.get(item.id) ?? text.responding)
               : null;
             const last = activity.last.get(item.id)?.message;
-            const preview = last ? `${last.role === 'user' ? 'Vos: ' : ''}${last.text}` : item.preview;
+            const preview = last ? `${last.role === 'user' ? text.youPrefix : ''}${last.text}` : item.preview;
             return (
               <SessionRow
                 session={item}
@@ -365,7 +368,7 @@ function ConversacionesBody() {
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Nueva conversación"
+        accessibilityLabel={text.newTitle}
         disabled={creating}
         onPress={() => {
           void onCreate();

@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { ChevronDownIcon, ChevronRightIcon } from 'react-native-heroicons/outline';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 
 export type ReasoningNote = {
@@ -24,6 +25,7 @@ function orderedNotes(notes: ReasoningNote[]): ReasoningNote[] {
 export function ReasoningFold({ notes }: { notes: ReasoningNote[] }) {
   const { theme } = useTheme();
   const color = theme.tokens.mut;
+  const str = useStrings();
   const [open, setOpen] = useState(false);
   const items = orderedNotes(notes);
   if (items.length === 0) return null;
@@ -32,7 +34,7 @@ export function ReasoningFold({ notes }: { notes: ReasoningNote[] }) {
     <View style={styles.wrap}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Razonamiento"
+        accessibilityLabel={str.chat.reasoning}
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen((current) => !current)}
         style={styles.trigger}
@@ -42,13 +44,13 @@ export function ReasoningFold({ notes }: { notes: ReasoningNote[] }) {
         ) : (
           <ChevronRightIcon color={color} size={16} />
         )}
-        <Text style={[styles.label, { color }]}>Razonamiento</Text>
+        <Text style={[styles.label, { color }]}>{str.chat.reasoning}</Text>
       </Pressable>
       {open
         ? items.map((note) => (
             <View key={note.id}>
               <Text selectable style={[styles.body, { color }]}>
-                {note.kind === 'tool' ? `Usando ${note.text}` : note.text}
+                {note.kind === 'tool' ? str.chat.usingTool(note.text) : note.text}
               </Text>
               {note.preview ? (
                 <Text selectable style={[styles.preview, { color }]}>

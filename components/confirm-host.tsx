@@ -3,6 +3,7 @@ import { BackHandler, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import {
   getPendingConfirm,
@@ -24,6 +25,7 @@ export function ConfirmHost() {
   const top = useSyncExternalStore(subscribeConfirm, getTopConfirmHost);
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
 
   useEffect(() => registerConfirmHost(id), [id]);
 
@@ -42,7 +44,7 @@ export function ConfirmHost() {
 
   return (
     <View style={styles.backdrop}>
-      <Pressable accessibilityLabel="Cancelar" style={StyleSheet.absoluteFill} onPress={() => resolveConfirm(false)} />
+      <Pressable accessibilityLabel={str.common.cancel} style={StyleSheet.absoluteFill} onPress={() => resolveConfirm(false)} />
       <View
         accessibilityRole="alert"
         style={[styles.dialog, { backgroundColor: t.bg, borderColor: t.bd }]}
@@ -51,7 +53,7 @@ export function ConfirmHost() {
         <Text style={[styles.message, { color: t.mut }]}>{pending.message}</Text>
         <View style={styles.actions}>
           <Button
-            label="Cancelar"
+            label={str.common.cancel}
             variant="outline"
             borderColor={t.bd}
             textColor={t.fg}

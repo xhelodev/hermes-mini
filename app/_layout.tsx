@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConfirmHost } from '@/components/confirm-host';
 import { ConnectionProvider } from '@/contexts/connection-context';
+import { I18nProvider } from '@/contexts/i18n-context';
 import { SwipeActionsProvider } from '@/contexts/swipe-actions-context';
 import { ThemeProvider, useTheme } from '@/contexts/theme-context';
 import { VoiceLocaleProvider } from '@/contexts/voice-locale-context';
@@ -34,15 +35,17 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.flex}>
       <SafeAreaProvider>
-        <ThemeProvider>
-          <VoiceLocaleProvider>
-            <SwipeActionsProvider>
-              <ConnectionProvider>
-                <ThemedStack />
-              </ConnectionProvider>
-            </SwipeActionsProvider>
-          </VoiceLocaleProvider>
-        </ThemeProvider>
+        <I18nProvider>
+          <ThemeProvider>
+            <VoiceLocaleProvider>
+              <SwipeActionsProvider>
+                <ConnectionProvider>
+                  <ThemedStack />
+                </ConnectionProvider>
+              </SwipeActionsProvider>
+            </VoiceLocaleProvider>
+          </ThemeProvider>
+        </I18nProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

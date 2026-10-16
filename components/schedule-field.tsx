@@ -3,23 +3,19 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Field } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import {
   WEEKDAYS,
   compileSchedule,
+  weekdayShort,
   describeSchedule,
   parseSchedule,
   type ScheduleDraft,
   type ScheduleMode,
 } from '@/lib/schedule';
 
-const MODES: { id: ScheduleMode; label: string }[] = [
-  { id: 'daily', label: 'Cada día' },
-  { id: 'weekly', label: 'Semanal' },
-  { id: 'hourly', label: 'Por horas' },
-  { id: 'minutes', label: 'Por minutos' },
-  { id: 'expression', label: 'Expresión' },
-];
+const MODES: ScheduleMode[] = ['daily', 'weekly', 'hourly', 'minutes', 'expression'];
 
 type ScheduleFieldProps = {
   value: string;
@@ -29,6 +25,7 @@ type ScheduleFieldProps = {
 export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const text = useStrings().scheduleField;
   const [draft, setDraft] = useState(() => parseSchedule(value));
   const emitted = useRef<string | null>(null);
 
@@ -63,16 +60,16 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.label, { color: t.mut }]}>Horario</Text>
+      <Text style={[styles.label, { color: t.mut }]}>{text.label}</Text>
       <View style={styles.modes}>
         {MODES.map((mode) => {
-          const selected = draft.mode === mode.id;
+          const selected = draft.mode === mode;
           return (
             <Pressable
-              key={mode.id}
+              key={mode}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              onPress={() => setMode(mode.id)}
+              onPress={() => setMode(mode)}
               style={[
                 styles.mode,
                 {
@@ -82,7 +79,7 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
                 },
               ]}
             >
-              <Text style={{ color: t.fg }}>{mode.label}</Text>
+              <Text style={{ color: t.fg }}>{text.modes[mode]}</Text>
             </Pressable>
           );
         })}
@@ -90,13 +87,13 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
       {draft.mode === 'weekly' ? (
         <View style={styles.days}>
           {WEEKDAYS.map((day) => {
-            const selected = draft.weekday === day.id;
+            const selected = draft.weekday === day;
             return (
               <Pressable
-                key={day.id}
+                key={day}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
-                onPress={() => update({ ...draft, weekday: day.id })}
+                onPress={() => update({ ...draft, weekday: day })}
                 style={[
                   styles.day,
                   {
@@ -106,7 +103,7 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
                   },
                 ]}
               >
-                <Text style={{ color: t.fg }}>{day.label}</Text>
+                <Text style={{ color: t.fg }}>{weekdayShort(day)}</Text>
               </Pressable>
             );
           })}
@@ -116,7 +113,7 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
         <View style={styles.pair}>
           <View style={styles.pairCell}>
             <Field
-              label="Hora"
+              label={text.hour}
               value={draft.hour}
               onChangeText={(hour) => update({ ...draft, hour })}
               keyboardType="number-pad"
@@ -129,7 +126,7 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
           </View>
           <View style={styles.pairCell}>
             <Field
-              label="Minuto"
+              label={text.minute}
               value={draft.minute}
               onChangeText={(minute) => update({ ...draft, minute })}
               keyboardType="number-pad"
@@ -144,7 +141,7 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
       ) : null}
       {draft.mode === 'hourly' || draft.mode === 'minutes' ? (
         <Field
-          label={draft.mode === 'hourly' ? 'Cada cuántas horas' : 'Cada cuántos minutos'}
+          label={draft.mode === 'hourly' ? text.everyHours : text.everyMinutes}
           value={draft.every}
           onChangeText={(every) => update({ ...draft, every })}
           keyboardType="number-pad"
@@ -157,7 +154,7 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
       ) : null}
       {draft.mode === 'hourly' ? (
         <Field
-          label="Minuto"
+          label={text.minute}
           value={draft.minute}
           onChangeText={(minute) => update({ ...draft, minute })}
           keyboardType="number-pad"
@@ -170,12 +167,12 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
       ) : null}
       {draft.mode === 'expression' ? (
         <Field
-          label="Expresión"
+          label={text.modes.expression}
           value={draft.expression}
           onChangeText={(expression) => update({ ...draft, expression })}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder="30 4 * * * o every 2h"
+          placeholder={text.expressionPlaceholder}
           borderColor={t.bd}
           backgroundColor={t.card}
           textColor={t.fg}
@@ -184,9 +181,9 @@ export function ScheduleField({ value, onChange }: ScheduleFieldProps) {
       ) : null}
       {phrase ? <Text style={{ color: t.fg }}>{phrase}</Text> : null}
       <Text style={[styles.note, { color: t.mut }]}>
-        {compiled ? `Se guarda como ${compiled}` : 'Completá el horario.'}
+        {compiled ? text.savedAs(compiled) : text.incomplete}
       </Text>
-      <Text style={[styles.hint, { color: t.mut }]}>La hora es la del servidor.</Text>
+      <Text style={[styles.hint, { color: t.mut }]}>{text.serverTime}</Text>
     </View>
   );
 }

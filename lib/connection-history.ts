@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { strings } from '@/lib/i18n';
 import { deleteSecret, readSecret, writeSecret } from '@/lib/secret-store';
 
 // Servidores a los que ya se conectó este teléfono. La lista (URL y fecha) va en
@@ -71,12 +72,13 @@ export function displayUrl(baseUrl: string): string {
 /** "recién", "hace 5 min", "hace 3 h", "hace 2 d" o la fecha. */
 export function formatLastUsed(timestamp: number, now: number): string {
   const minutes = Math.floor(Math.max(0, now - timestamp) / 60_000);
-  if (minutes < 1) return 'recién';
-  if (minutes < 60) return `hace ${minutes} min`;
+  const text = strings().history;
+  if (minutes < 1) return text.justNow;
+  if (minutes < 60) return text.minutesAgo(minutes);
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
+  if (hours < 24) return text.hoursAgo(hours);
   const days = Math.floor(hours / 24);
-  if (days < 30) return `hace ${days} d`;
+  if (days < 30) return text.daysAgo(days);
   return new Date(timestamp).toLocaleDateString();
 }
 

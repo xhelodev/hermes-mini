@@ -48,6 +48,15 @@
         }
       ],
       [
+        "expo-localization",
+        {
+          "supportedLocales": [
+            "es",
+            "en"
+          ]
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {
@@ -58,6 +67,10 @@
       ],
       "./plugins/with-android-r8-optimize"
     ],
+    "locales": {
+      "es": "./locales/es.json",
+      "en": "./locales/en.json"
+    },
     "experiments": {
       "typedRoutes": true
     },

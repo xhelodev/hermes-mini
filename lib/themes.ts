@@ -1,3 +1,5 @@
+import { strings } from '@/lib/i18n';
+
 export type ThemeId =
   | 'zinc-claro'
   | 'zinc-oscuro'
@@ -159,6 +161,11 @@ export const THEMES: ThemeDefinition[] = [
     },
   },
 ];
+
+/** Nombre de la paleta en el idioma de la app. */
+export function themeLabel(theme: ThemeDefinition): string {
+  return strings().themes[theme.id] ?? theme.label;
+}
 
 export const DEFAULT_THEME_ID: ThemeId = 'zinc-oscuro';
 

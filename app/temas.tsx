@@ -22,10 +22,11 @@ import { VoiceLocaleSheet } from '@/components/voice-locale-sheet';
 import { RequireConnection, useConnection } from '@/contexts/connection-context';
 import { useSwipeActions } from '@/contexts/swipe-actions-context';
 import { useTheme } from '@/contexts/theme-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
 import { swipeActionLabel, type SwipeDirection } from '@/lib/swipe-actions';
 import { feedbackMailto, SUPPORT_EMAIL } from '@/lib/support';
-import { THEMES, type ThemeId } from '@/lib/themes';
+import { THEMES, themeLabel, type ThemeId } from '@/lib/themes';
 
 function ThemePreviewCard({
   label,
@@ -106,14 +107,16 @@ function TemasBody() {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const { config: swipe } = useSwipeActions();
   const [swipeDirection, setSwipeDirection] = useState<SwipeDirection | null>(null);
+  const str = useStrings();
+  const text = str.settings;
 
   return (
-    <ScreenShell title="Ajustes" onBack={() => router.back()}>
+    <ScreenShell title={text.title} onBack={() => router.back()}>
       <View style={styles.grid}>
         {THEMES.map((item) => (
           <View key={item.id} style={styles.cell}>
             <ThemePreviewCard
-              label={item.label}
+              label={themeLabel(item)}
               tokens={item.tokens}
               selected={themeId === item.id}
               labelColor={t.fg}
@@ -125,52 +128,52 @@ function TemasBody() {
       </View>
       <SettingsRow
         icon={CpuChipIcon}
-        label="Modelo por defecto"
-        value={defaultModel?.label ?? 'El del servidor'}
+        label={text.defaultModel}
+        value={defaultModel?.label ?? text.serverModel}
         onPress={() => setModelsOpen(true)}
       />
       <SettingsRow
         icon={LanguageIcon}
-        label="Idioma de voz"
+        label={text.voiceLanguage}
         value={voiceLabel}
         onPress={() => setVoiceOpen(true)}
       />
       <SettingsRow
         icon={ArrowLeftIcon}
-        label="Deslizar a la izquierda"
+        label={text.swipeLeft}
         value={swipeActionLabel(swipe.left)}
         onPress={() => setSwipeDirection('left')}
       />
       <SettingsRow
         icon={ArrowRightIcon}
-        label="Deslizar a la derecha"
+        label={text.swipeRight}
         value={swipeActionLabel(swipe.right)}
         onPress={() => setSwipeDirection('right')}
       />
       <SettingsRow
         icon={PuzzlePieceIcon}
-        label="Skills y herramientas"
+        label={str.skills.title}
         onPress={() => router.push('/habilidades')}
       />
       <SettingsRow
         icon={ChatBubbleLeftEllipsisIcon}
-        label="Reportar un problema o enviar comentario"
+        label={text.feedback}
         onPress={() => {
           Linking.openURL(feedbackMailto()).catch(() => {
             void Clipboard.setStringAsync(SUPPORT_EMAIL);
             Alert.alert(
-              'No se pudo abrir el correo',
-              `Copié ${SUPPORT_EMAIL} al portapapeles. Escribinos desde tu app de correo.`,
+              text.mailFailedTitle,
+              text.mailFailedMessage(SUPPORT_EMAIL),
             );
           });
         }}
       />
       <Text style={[styles.note, { color: t.mut }]}>
-        El cambio es al instante. Paletas inspiradas en apps conocidas, sin sus logos.
+        {text.themesNote}
       </Text>
       <Button
         style={styles.disconnect}
-        label="Desconectar"
+        label={text.disconnect}
         variant="outline"
         borderColor={t.bd}
         textColor={t.fg}
@@ -180,7 +183,7 @@ function TemasBody() {
       />
       <ModelSheet
         visible={modelsOpen}
-        title="Modelo por defecto"
+        title={text.defaultModel}
         onClose={() => setModelsOpen(false)}
       />
       <VoiceLocaleSheet visible={voiceOpen} onClose={() => setVoiceOpen(false)} />
