@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Image,
   Modal,
   Pressable,
@@ -54,6 +55,7 @@ import {
   advanceStatus,
   createStreamWatchdog,
   phaseAfterEvent,
+  stopReason,
   toolNameOf,
   type StreamPhase,
   type StreamStatus,
@@ -554,6 +556,8 @@ function ChatBody() {
     startRun(sessionId, prose);
     let reply = '';
     let lost = false;
+    // Al minimizar la app el sistema puede cortar el socket aunque el servidor siga con el turno.
+    let backgrounded = false;
     const watchdog = createStreamWatchdog({
       onSlow: (slow) => {
         if (!alive.current) return;
@@ -565,6 +569,16 @@ function ChatBody() {
       },
     });
     watchdogRef.current = watchdog;
+    // Mientras la app está en segundo plano el JS se congela: ese silencio no es del servidor,
+    // así que pausamos el vigía para no dar la conexión por perdida sin motivo.
+    const appState = AppState.addEventListener('change', (next) => {
+      if (next === 'active') {
+        watchdog.resume();
+        return;
+      }
+      backgrounded = true;
+      watchdog.pause();
+    });
     const track = (event: SseEvent) => {
       const name = sseEventName(event);
       const data = event.data;
@@ -613,15 +627,18 @@ function ChatBody() {
       );
     } catch (err) {
       if (!alive.current) return;
-      const message = lost
-        ? 'Se perdió la conexión: el servidor dejó de responder.'
-        : abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted')
-          ? null
-          : describeHermesError(err);
-      if (!message) return;
-      setError(message);
-      setRetry(prose ? { error: message, text: prose } : null);
+      const aborted = abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted');
+      const stop = stopReason({ lost, aborted, backgrounded, describe: () => describeHermesError(err) });
+      if (stop.recover) {
+        // El turno sigue en el servidor: avisamos y recargamos para traer la respuesta final.
+        setNotice('La app se minimizó; recuperando la respuesta del servidor…');
+        setReloadKey((key) => key + 1);
+      } else if (stop.message) {
+        setError(stop.message);
+        setRetry(prose ? { error: stop.message, text: prose } : null);
+      }
     } finally {
+      appState.remove();
       watchdog.stop();
       if (watchdogRef.current === watchdog) watchdogRef.current = null;
       finishRun(sessionId, reply);
