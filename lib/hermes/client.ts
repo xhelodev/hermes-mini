@@ -147,12 +147,23 @@ export class HermesClient {
     try {
       return await this.insertSession(title);
     } catch (error) {
-      if (error instanceof HermesError && error.status === 400) {
-        const stamp = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
-        return this.insertSession(`${title} ${stamp}`);
-      }
-      throw error;
+      if (!(error instanceof HermesError && error.status === 400)) throw error;
     }
+
+    // El servidor exige títulos únicos: reintenta con hora (con segundos) y, si
+    // sigue chocando, con un sufijo aleatorio.
+    const stamp = new Date().toLocaleTimeString('es', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    try {
+      return await this.insertSession(`${title} ${stamp}`);
+    } catch (error) {
+      if (!(error instanceof HermesError && error.status === 400)) throw error;
+    }
+    const suffix = Math.random().toString(36).slice(2, 6);
+    return this.insertSession(`${title} ${stamp} ${suffix}`);
   }
 
   async getSession(sessionId: string): Promise<HermesSession> {
