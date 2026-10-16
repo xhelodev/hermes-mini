@@ -10,6 +10,7 @@ import {
   CpuChipIcon,
   LanguageIcon,
   PuzzlePieceIcon,
+  TrashIcon,
 } from 'react-native-heroicons/outline';
 import type { NumberProp, SvgProps } from 'react-native-svg';
 
@@ -19,11 +20,16 @@ import { SwipeActionsSheet } from '@/components/swipe-actions-sheet';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { VoiceLocaleSheet } from '@/components/voice-locale-sheet';
-import { RequireConnection, useConnection } from '@/contexts/connection-context';
+import { RequireConnection, useConnection, useHermesClient } from '@/contexts/connection-context';
 import { useSwipeActions } from '@/contexts/swipe-actions-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
+import { confirmAction } from '@/lib/confirm';
+import { describeHermesError } from '@/lib/hermes';
+import { useSessionActivity } from '@/lib/session-activity';
+import { deleteAllSessions } from '@/lib/session-cleanup';
+import { cachedSessions, rememberSessions } from '@/lib/session-list-cache';
 import { swipeActionLabel, type SwipeDirection } from '@/lib/swipe-actions';
 import { feedbackMailto, SUPPORT_EMAIL } from '@/lib/support';
 import { THEMES, themeLabel, type ThemeId } from '@/lib/themes';
@@ -63,11 +69,13 @@ function SettingsRow({
   icon: Icon,
   label,
   value,
+  disabled = false,
   onPress,
 }: {
   icon: RowIcon;
   label: string;
   value?: string;
+  disabled?: boolean;
   onPress: () => void;
 }) {
   const { theme } = useTheme();
@@ -75,8 +83,9 @@ function SettingsRow({
 
   return (
     <Pressable
+      disabled={disabled}
       onPress={onPress}
-      style={[styles.modelRow, { borderColor: t.bd, backgroundColor: t.card }]}
+      style={[styles.modelRow, { borderColor: t.bd, backgroundColor: t.card, opacity: disabled ? 0.5 : 1 }]}
     >
       <Icon color={t.fg} size={22} />
       <Text style={[styles.rowLabel, { color: t.fg }]}>{label}</Text>
@@ -109,6 +118,41 @@ function TemasBody() {
   const [swipeDirection, setSwipeDirection] = useState<SwipeDirection | null>(null);
   const str = useStrings();
   const text = str.settings;
+  const client = useHermesClient();
+  const activity = useSessionActivity();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteStatus, setDeleteStatus] = useState<{ text: string; error: boolean } | null>(null);
+
+  function onDeleteAll() {
+    const run = () => {
+      void (async () => {
+        setDeleting(true);
+        setDeleteStatus(null);
+        try {
+          const result = await deleteAllSessions(client, new Set(activity.running.keys()));
+          const gone = new Set(result.deleted);
+          // La lista de conversaciones se pinta desde la caché al volver: que no muestre las borradas.
+          rememberSessions(client, (cachedSessions(client) ?? []).filter((item) => !gone.has(item.id)));
+          setDeleteStatus(
+            result.failed > 0
+              ? { text: str.cleanup.failed(result.failed), error: true }
+              : { text: str.cleanup.done(result.deleted.length), error: false },
+          );
+        } catch (err) {
+          setDeleteStatus({ text: describeHermesError(err), error: true });
+        } finally {
+          setDeleting(false);
+        }
+      })();
+    };
+    confirmAction({
+      title: str.cleanup.deleteAll,
+      message: str.cleanup.deleteAllMessage,
+      confirmLabel: str.cleanup.deleteAllConfirm,
+      destructive: true,
+      onConfirm: run,
+    });
+  }
 
   return (
     <ScreenShell title={text.title} onBack={() => router.back()}>
@@ -155,6 +199,18 @@ function TemasBody() {
         label={str.skills.title}
         onPress={() => router.push('/habilidades')}
       />
+      <SettingsRow
+        icon={TrashIcon}
+        label={str.cleanup.deleteAll}
+        value={deleting ? str.cleanup.deleting : undefined}
+        disabled={deleting}
+        onPress={onDeleteAll}
+      />
+      {deleteStatus ? (
+        <Text style={[styles.status, { color: deleteStatus.error ? '#ef4444' : t.mut }]}>
+          {deleteStatus.text}
+        </Text>
+      ) : null}
       <SettingsRow
         icon={ChatBubbleLeftEllipsisIcon}
         label={text.feedback}
@@ -220,5 +276,6 @@ const styles = StyleSheet.create({
   rowLabel: { flex: 1 },
   rowValue: { flexShrink: 1, maxWidth: '46%', textAlign: 'right' },
   note: { fontSize: 14 },
+  status: { marginTop: -8, marginBottom: 16, fontSize: 14 },
   disconnect: { marginTop: 24 },
 });
