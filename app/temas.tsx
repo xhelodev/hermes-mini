@@ -1,10 +1,12 @@
 import { router } from 'expo-router';
 import { useState, type ComponentType } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ChevronRightIcon,
+  ChatBubbleLeftEllipsisIcon,
   CpuChipIcon,
   LanguageIcon,
   PuzzlePieceIcon,
@@ -22,6 +24,7 @@ import { useSwipeActions } from '@/contexts/swipe-actions-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
 import { swipeActionLabel, type SwipeDirection } from '@/lib/swipe-actions';
+import { feedbackMailto, SUPPORT_EMAIL } from '@/lib/support';
 import { THEMES, type ThemeId } from '@/lib/themes';
 
 function ThemePreviewCard({
@@ -148,6 +151,19 @@ function TemasBody() {
         icon={PuzzlePieceIcon}
         label="Skills y herramientas"
         onPress={() => router.push('/habilidades')}
+      />
+      <SettingsRow
+        icon={ChatBubbleLeftEllipsisIcon}
+        label="Reportar un problema o enviar comentario"
+        onPress={() => {
+          Linking.openURL(feedbackMailto()).catch(() => {
+            void Clipboard.setStringAsync(SUPPORT_EMAIL);
+            Alert.alert(
+              'No se pudo abrir el correo',
+              `Copié ${SUPPORT_EMAIL} al portapapeles. Escribinos desde tu app de correo.`,
+            );
+          });
+        }}
       />
       <Text style={[styles.note, { color: t.mut }]}>
         El cambio es al instante. Paletas inspiradas en apps conocidas, sin sus logos.
