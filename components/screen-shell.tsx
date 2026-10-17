@@ -9,6 +9,8 @@ import { useTheme } from '@/contexts/theme-context';
 type ScreenShellProps = {
   title: string;
   subtitle?: string;
+  /** Va pegado al título (p. ej. el indicador de conexión). */
+  titleAccessory?: ReactNode;
   onBack?: () => void;
   headerRight?: ReactNode;
   scroll?: boolean;
@@ -18,6 +20,7 @@ type ScreenShellProps = {
 export function ScreenShell({
   title,
   subtitle,
+  titleAccessory,
   onBack,
   headerRight,
   scroll = true,
@@ -53,9 +56,12 @@ export function ScreenShell({
           </Pressable>
         ) : null}
         <View style={styles.flex}>
-          <Text numberOfLines={1} style={[styles.title, { color: t.fg }]}>
-            {title}
-          </Text>
+          <View style={styles.titleRow}>
+            <Text numberOfLines={1} style={[styles.title, { color: t.fg }]}>
+              {title}
+            </Text>
+            {titleAccessory}
+          </View>
           {subtitle ? (
             <Text numberOfLines={1} style={[styles.subtitle, { color: t.mut }]}>
               {subtitle}
@@ -80,6 +86,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 8,
   },
-  title: { fontSize: 20, fontWeight: '600' },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  title: { fontSize: 20, fontWeight: '600', flexShrink: 1 },
   subtitle: { marginTop: 4, fontSize: 14 },
 });
