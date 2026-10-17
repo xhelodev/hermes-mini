@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { CalendarDaysIcon, Cog6ToothIcon, PlusIcon, TrashIcon } from 'react-native-heroicons/outline';
+import { CalendarDaysIcon, Cog6ToothIcon, CpuChipIcon, PlusIcon, TrashIcon } from 'react-native-heroicons/outline';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -398,6 +398,14 @@ function ConversacionesBody() {
             onPress={() => router.push('/jobs')}
           >
             <CalendarDaysIcon color={t.fg} size={22} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={str.bots.title}
+            hitSlop={8}
+            onPress={() => router.push('/bots')}
+          >
+            <CpuChipIcon color={t.fg} size={22} />
           </Pressable>
           <Pressable
             accessibilityRole="button"

@@ -1,5 +1,5 @@
 import { requireAuth } from './auth.mjs';
-import { MAX_CHAT_BODY_BYTES, DEFAULT_MODEL_OPTIONS, VIRTUAL_MODEL } from './constants.mjs';
+import { MAX_CHAT_BODY_BYTES, DEFAULT_MODEL_OPTIONS, MOCK_CAPABILITIES, VIRTUAL_MODEL } from './constants.mjs';
 import { handleConvert } from './convert.mjs';
 import { faultResponse, getFault, parseCustomModelOptions } from './faults.mjs';
 import { handleChatCompletions } from './handlers-chat.mjs';
@@ -12,13 +12,24 @@ import {
   handleSessionChat,
   handleSessionMessages,
 } from './handlers-sessions.mjs';
-import { handleCreateRun, handleGetRun, handleRunEvents, handleRunStop } from './handlers-runs.mjs';
+import { handleCreateRun, handleGetRun, handleRunEvents, handleRunSteer, handleRunStop } from './handlers-runs.mjs';
 import { getRequestPath, openAiError, parseJsonBody, readRawBody, sendJson } from './http.mjs';
+import { profileKey, splitProfile, withProfile } from './profile-scope.mjs';
 import { getModelOptionsOverride, setModelOptionsOverride } from './store.mjs';
 
 const UPLOAD_PATHS = ['/v1/artifacts/upload', '/upload'];
 
 export async function handleRequest(req, res) {
+  const scoped = splitProfile(req.url);
+  if (!scoped) return withProfile('default', () => route(req, res));
+  if (profileKey(scoped.profile) === null) {
+    return sendJson(res, 404, { error: 'Unknown or unconfigured profile' });
+  }
+  req.url = scoped.rest;
+  return withProfile(scoped.profile, () => route(req, res));
+}
+
+async function route(req, res) {
   const { pathname } = getRequestPath(req);
   const method = (req.method || 'GET').toUpperCase();
   const fault = getFault(req);
@@ -56,6 +67,10 @@ export async function handleRequest(req, res) {
       object: 'list',
       data: [{ id: VIRTUAL_MODEL, object: 'model', owned_by: 'hermes-agent' }],
     });
+  }
+
+  if (method === 'GET' && pathname === '/v1/capabilities') {
+    return sendJson(res, 200, MOCK_CAPABILITIES);
   }
 
   if (method === 'GET' && pathname === '/api/model/options') {
@@ -117,6 +132,7 @@ export async function handleRequest(req, res) {
     if (method === 'GET' && sub === '') return handleGetRun(req, res, runId);
     if (method === 'GET' && sub === '/events') return handleRunEvents(req, res, runId);
     if (method === 'POST' && sub === '/stop') return handleRunStop(req, res, runId);
+    if (method === 'POST' && sub === '/steer') return handleRunSteer(req, res, runId, body);
   }
 
   return sendJson(res, 404, openAiError(`Route not found: ${method} ${pathname}`));

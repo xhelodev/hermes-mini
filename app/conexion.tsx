@@ -24,7 +24,13 @@ import {
 } from '@/lib/connection-history';
 import { envCredentials } from '@/lib/env';
 import { useKeyboardInset } from '@/lib/keyboard-inset';
-import { describeHermesError, HermesClient, HermesError, normalizeBaseUrl } from '@/lib/hermes';
+import {
+  describeHermesError,
+  HermesClient,
+  HermesError,
+  missingCoreEndpoints,
+  normalizeBaseUrl,
+} from '@/lib/hermes';
 
 export default function ConexionScreen() {
   const { theme } = useTheme();
@@ -76,12 +82,22 @@ export default function ConexionScreen() {
         setMessage(text.keyMissing);
         return;
       }
-      const probe = await new HermesClient({ baseUrl: normalized, apiKey: key }).probe();
+      const candidate = new HermesClient({ baseUrl: normalized, apiKey: key });
+      const probe = await candidate.probe();
+      // Un servidor que no lo informa no es un error: se asume que tiene todo.
+      const capabilities = await candidate.getCapabilities().catch(() => null);
+      const missing = missingCoreEndpoints(capabilities);
+      if (missing.length > 0) {
+        setMessage(text.missingApi(missing.join(', ')));
+        return;
+      }
       await saveConnection(normalized, key, remember);
       // El historial es un extra: si falla, igual se entra.
       await recordConnection(normalized, key, remember).catch(() => undefined);
       setOk(true);
-      setMessage(text.ok(probe.latencyMs));
+      // `hermes-agent` es el nombre por defecto; otro nombre es el perfil que atiende.
+      const profile = capabilities?.model && capabilities.model !== 'hermes-agent' ? capabilities.model : '';
+      setMessage(text.ok(probe.latencyMs, profile));
       await new Promise((resolve) => setTimeout(resolve, 450));
       if (alive.current) router.replace('/conversaciones');
     } catch (error) {

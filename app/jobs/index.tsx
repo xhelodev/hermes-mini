@@ -1,4 +1,4 @@
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { PlusIcon } from 'react-native-heroicons/outline';
@@ -6,25 +6,37 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
-import { RequireConnection, useHermesClient } from '@/contexts/connection-context';
+import { BotScope, useBotScope, useScopedClient } from '@/contexts/bots-context';
+import { RequireConnection } from '@/contexts/connection-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { describeHermesError, formatPreview, HermesError, type HermesJob } from '@/lib/hermes';
+import { stripRoutinePrefix } from '@/lib/bots';
 import { describeSchedule, scheduleDetail } from '@/lib/schedule';
 
+function oneParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
+
 export default function JobsScreen() {
+  // Con `?bot=` son las rutinas de ese Bot: las tareas de su perfil.
+  const params = useLocalSearchParams<{ bot?: string }>();
   return (
     <RequireConnection>
-      <JobsBody />
+      <BotScope bot={oneParam(params.bot)}>
+        <JobsBody />
+      </BotScope>
     </RequireConnection>
   );
 }
 
 function JobsBody() {
-  const client = useHermesClient();
+  const client = useScopedClient();
+  const bot = useBotScope();
   const { theme } = useTheme();
   const t = theme.tokens;
-  const text = useStrings().jobs;
+  const str = useStrings();
+  const text = str.jobs;
   const insets = useSafeAreaInsets();
   const [jobs, setJobs] = useState<HermesJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +71,7 @@ function JobsBody() {
   const loading = jobs === null && !error;
 
   return (
-    <ScreenShell scroll={false} title={text.title} onBack={() => router.back()}>
+    <ScreenShell scroll={false} title={bot ? str.bots.routinesOf(bot) : text.title} onBack={() => router.back()}>
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={t.pri} />
@@ -91,11 +103,15 @@ function JobsBody() {
             const detail = scheduleDetail(item.schedule);
             return (
               <Pressable
-                onPress={() => router.push({ pathname: '/jobs/[id]', params: { id: item.id } })}
+                onPress={() =>
+                  router.push({ pathname: '/jobs/[id]', params: bot ? { id: item.id, bot } : { id: item.id } })
+                }
                 style={[styles.row, { borderBottomColor: t.bd }]}
               >
                 <View style={styles.rowTop}>
-                  <Text style={[styles.title, { color: t.fg }]}>{item.name}</Text>
+                  <Text style={[styles.title, { color: t.fg }]}>
+                    {bot ? stripRoutinePrefix(bot, item.name) : item.name}
+                  </Text>
                   {item.paused ? <Text style={[styles.time, { color: t.mut }]}>{text.paused}</Text> : null}
                 </View>
                 <Text style={[styles.preview, { color: t.mut }]}>{describeSchedule(item.schedule)}</Text>
@@ -113,7 +129,7 @@ function JobsBody() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={text.newJob}
-        onPress={() => router.push('/jobs/nueva')}
+        onPress={() => router.push(bot ? { pathname: '/jobs/nueva', params: { bot } } : '/jobs/nueva')}
         style={[styles.fab, { backgroundColor: t.pri, bottom: insets.bottom + 24 }]}
       >
         <PlusIcon color={t.pfg} size={28} />

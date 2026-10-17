@@ -15,6 +15,7 @@ import {
   updateSession,
 } from './store.mjs';
 import { validateMessageContent } from './content-validation.mjs';
+import { playSlowTurn } from './turns.mjs';
 
 function parseUserMessage(body) {
   const raw = body.message ?? body.input;
@@ -24,9 +25,12 @@ function parseUserMessage(body) {
   return { content: raw };
 }
 
-export function handleListSessions(_req, res) {
-  // Como Hermes: las archivadas no se listan, salvo las fijadas.
-  const sessions = listSessions().filter((s) => !s.archived || s.pinned);
+export function handleListSessions(req, res) {
+  // Como Hermes: las archivadas no se listan, salvo las fijadas; `title` busca por título exacto.
+  const title = new URL(req.url || '/', 'http://mock').searchParams.get('title')?.trim();
+  const sessions = listSessions()
+    .filter((s) => !s.archived || s.pinned)
+    .filter((s) => !title || (s.title || '').trim() === title);
   sendJson(res, 200, { object: 'list', data: sessions });
 }
 
@@ -92,7 +96,9 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
     appendMessage(id, { role: 'user', content: parsed.content });
     const runtime = resolveRuntime(body || {});
     const text = mockAssistantText(body || {}, runtime);
-    const crashed = stream && getFault(req) === 'agenterror';
+    const fault = stream ? getFault(req) : '';
+    const crashed = fault === 'agenterror';
+    if (fault === 'slowstream') return await streamSlowly(res, id, runId, text, runtime);
     if (!crashed) appendMessage(id, { role: 'assistant', content: text });
 
     if (stream) {
@@ -132,4 +138,36 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
   } finally {
     releaseRunSlot();
   }
+}
+
+/** Turno lento del stream de sesión; si el cliente se desconecta se detiene, como en Hermes. */
+async function streamSlowly(res, sessionId, runId, text, runtime) {
+  const run = completeRun(runId, 'running', { steers: [] });
+  let closed = false;
+  res.on('close', () => {
+    closed = !res.writableFinished;
+  });
+  initSse(res);
+  const stop = startKeepalive(res);
+  const { reply, late, cancelled } = await playSlowTurn({
+    run,
+    sessionId,
+    text,
+    emitDelta: (delta) => sseWrite(res, { type: 'assistant.delta', run_id: runId, delta }, 'assistant.delta'),
+    stopped: () => closed || run.cancelRequested === true,
+  });
+  clearInterval(stop);
+  if (cancelled) {
+    completeRun(runId, 'cancelled', { output: reply });
+    if (closed) return;
+    sseWrite(res, { type: 'run.cancelled', run_id: runId, status: 'cancelled' }, 'run.cancelled');
+    sseWrite(res, { type: 'done', run_id: runId }, 'done');
+    res.end();
+    return;
+  }
+  const pending = late ? { pending_steer: late } : {};
+  completeRun(runId, 'completed', { output: reply, runtime, ...pending });
+  sseWrite(res, { type: 'run.completed', run_id: runId, status: 'completed', runtime, ...pending }, 'run.completed');
+  sseWrite(res, { type: 'done', run_id: runId }, 'done');
+  res.end();
 }
