@@ -76,6 +76,19 @@ Cada build local deja varios GB en `~/tmp`; se pueden borrar cuando el APK o el 
 
 Durante el build son normales los avisos `deprecated` de `react-native-reanimated` y `Hard link ... failed. Doing a slower copy instead.` (el caché de Gradle está en `/home` y el build en otro sistema de archivos). No tumban la compilación.
 
+### Código de versión (versionCode)
+
+Play Store rechaza un AAB cuyo `versionCode` ya se subió (`Ya se usó el código de la versión N`). Con `appVersionSource: remote` el contador vive en EAS, no en `app.json`. El perfil `production` tiene `autoIncrement: true`, así que cada build (nube o `--local`) lo sube solo.
+
+Ver o fijar el contador a mano:
+
+```bash
+npx eas-cli build:version:get --platform android --profile production
+npx eas-cli build:version:set --platform android --profile production
+```
+
+`version` en `app.json` (p. ej. `0.1.2`) es el nombre visible; el `versionCode` es independiente.
+
 ## Telemetría
 
 `EXPO_NO_TELEMETRY=1` en `.env`, CI y los perfiles EAS `preview` y `production`. Sin `expo-updates`, `expo-insights` ni librerías de analíticas.
