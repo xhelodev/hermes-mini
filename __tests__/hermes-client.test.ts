@@ -408,6 +408,22 @@ describe('cliente Hermes', () => {
     ]);
   });
 
+  it('pide el último mensaje con un orden que Hermes acepta', async () => {
+    const fetchImpl = jest.fn(async (_input: RequestInfo | URL) =>
+      json(200, { data: [{ id: 2, role: 'assistant', content: 'Listo.' }] }),
+    );
+    const client = new HermesClient({
+      baseUrl: 'http://127.0.0.1:8642',
+      apiKey: 'mock-test-key',
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const last = await client.getLastMessage('sess_1');
+    expect(last?.text).toBe('Listo.');
+    const url = new URL(String(fetchImpl.mock.calls[0]?.[0]));
+    expect(url.searchParams.get('order')).toBe('latest');
+    expect(url.searchParams.get('limit')).toBe('1');
+  });
+
   it('fija, ramifica, detiene y aprueba contra el API', async () => {
     const fetchImpl = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

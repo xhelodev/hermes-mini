@@ -190,7 +190,8 @@ export class HermesClient {
   }
 
   async getLastMessage(sessionId: string): Promise<HermesMessage | null> {
-    const query = new URLSearchParams({ order: 'newest', limit: '1' });
+    // Hermes solo acepta `oldest` o `latest`; `latest` pagina desde el final.
+    const query = new URLSearchParams({ order: 'latest', limit: '1' });
     const payload = await this.request(
       `/api/sessions/${encodeURIComponent(sessionId)}/messages?${query.toString()}`,
     );

@@ -87,6 +87,36 @@ describe('Hermes mock gateway', () => {
     assert.equal(msgs.json.data.length, 2);
   });
 
+  it('messages accept only oldest or latest order, like Hermes', async () => {
+    const created = await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} });
+    const id = created.json.id;
+    await request(ctx.port, `/api/sessions/${id}/chat`, { method: 'POST', headers: auth(), body: { message: 'hello' } });
+    const last = await request(ctx.port, `/api/sessions/${id}/messages?order=latest&limit=1`, { headers: auth() });
+    assert.equal(last.status, 200);
+    assert.equal(last.json.data.length, 1);
+    assert.equal(last.json.data[0].role, 'assistant');
+    const first = await request(ctx.port, `/api/sessions/${id}/messages?order=oldest&limit=1`, { headers: auth() });
+    assert.equal(first.json.data[0].role, 'user');
+    const bad = await request(ctx.port, `/api/sessions/${id}/messages?order=newest&limit=1`, { headers: auth() });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.json.error.code, 'invalid_pagination');
+  });
+
+  it('chat stream ends with done, and an agent crash sends error without run.failed', async () => {
+    const created = await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} });
+    const id = created.json.id;
+    const events = async (extra) => {
+      const r = await request(ctx.port, `/api/sessions/${id}/chat/stream`, {
+        method: 'POST',
+        headers: auth(extra),
+        body: { input: 'hello' },
+      });
+      return [...r.text.matchAll(/^event: (.+)$/gm)].map((m) => m[1]);
+    };
+    assert.deepEqual(await events(), ['assistant.delta', 'run.completed', 'done']);
+    assert.deepEqual(await events({ 'X-Mock-Fault': 'agenterror' }), ['error', 'done']);
+  });
+
   it('archived sessions leave the list until unarchived', async () => {
     const created = await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} });
     const id = created.json.id;

@@ -58,6 +58,7 @@ import {
   advanceStatus,
   createStreamWatchdog,
   phaseAfterEvent,
+  runFailureMessage,
   stopReason,
   toolNameOf,
   type StreamPhase,
@@ -500,17 +501,11 @@ function ChatBody() {
       watchdogRef.current?.pause();
       return;
     }
-    if (name === 'run.failed') {
+    const failure = runFailureMessage(name, data);
+    if (failure) {
       enterPhase(null);
       setApproval(null);
-      const raw = data.error;
-      const message =
-        typeof raw === 'string'
-          ? raw
-          : raw && typeof raw === 'object' && 'message' in raw && typeof raw.message === 'string'
-            ? raw.message
-            : str.chat.runFailed;
-      setError(message);
+      setError(failure);
     }
     if (name === 'run.completed' || name === 'run.cancelled') {
       const reply = finalAssistantReply(data.messages);
