@@ -5,6 +5,7 @@ import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowUturnLeftIcon,
   ChevronRightIcon,
   ChatBubbleLeftEllipsisIcon,
   CpuChipIcon,
@@ -27,10 +28,8 @@ import { useStrings } from '@/contexts/i18n-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
 import { confirmAction } from '@/lib/confirm';
 import { describeHermesError } from '@/lib/hermes';
+import { hideSessions, restoreHiddenSessions, useHiddenSessions } from '@/lib/hidden-sessions';
 import { useSessionActivity } from '@/lib/session-activity';
-import { forgetSentImages } from '@/lib/sent-images';
-import { deleteAllSessions } from '@/lib/session-cleanup';
-import { cachedSessions, rememberSessions } from '@/lib/session-list-cache';
 import { swipeActionLabel, type SwipeDirection } from '@/lib/swipe-actions';
 import { feedbackMailto, SUPPORT_EMAIL } from '@/lib/support';
 import { THEMES, themeLabel, type ThemeId } from '@/lib/themes';
@@ -123,6 +122,7 @@ function TemasBody() {
   const activity = useSessionActivity();
   const [deleting, setDeleting] = useState(false);
   const [deleteStatus, setDeleteStatus] = useState<{ text: string; error: boolean } | null>(null);
+  const hidden = useHiddenSessions(client);
 
   function onDeleteAll() {
     const run = () => {
@@ -130,16 +130,16 @@ function TemasBody() {
         setDeleting(true);
         setDeleteStatus(null);
         try {
-          const result = await deleteAllSessions(client, new Set(activity.running.keys()));
-          void forgetSentImages(result.deleted);
-          const gone = new Set(result.deleted);
-          // La lista de conversaciones se pinta desde la caché al volver: que no muestre las borradas.
-          rememberSessions(client, (cachedSessions(client) ?? []).filter((item) => !gone.has(item.id)));
-          setDeleteStatus(
-            result.failed > 0
-              ? { text: str.cleanup.failed(result.failed), error: true }
-              : { text: str.cleanup.done(result.deleted.length), error: false },
+          // Solo de la app: se ocultan las que hoy lista el servidor, que las sigue guardando.
+          const running = activity.running;
+          const targets = (await client.listSessions()).filter(
+            (session) => !session.archived && !running.has(session.id) && !hidden?.has(session.id),
           );
+          await hideSessions(
+            client,
+            targets.map((session) => session.id),
+          );
+          setDeleteStatus({ text: str.cleanup.done(targets.length), error: false });
         } catch (err) {
           setDeleteStatus({ text: describeHermesError(err), error: true });
         } finally {
@@ -153,6 +153,19 @@ function TemasBody() {
       confirmLabel: str.cleanup.deleteAllConfirm,
       destructive: true,
       onConfirm: run,
+    });
+  }
+
+  function onRestore() {
+    confirmAction({
+      title: str.cleanup.restore,
+      message: str.cleanup.restoreMessage,
+      confirmLabel: str.cleanup.restoreConfirm,
+      onConfirm: () => {
+        void restoreHiddenSessions(client).then((count) => {
+          setDeleteStatus({ text: str.cleanup.restored(count), error: false });
+        });
+      },
     });
   }
 
@@ -208,6 +221,15 @@ function TemasBody() {
         disabled={deleting}
         onPress={onDeleteAll}
       />
+      {hidden && hidden.size > 0 ? (
+        <SettingsRow
+          icon={ArrowUturnLeftIcon}
+          label={str.cleanup.restore}
+          value={str.cleanup.count(hidden.size)}
+          disabled={deleting}
+          onPress={onRestore}
+        />
+      ) : null}
       {deleteStatus ? (
         <Text style={[styles.status, { color: deleteStatus.error ? '#ef4444' : t.mut }]}>
           {deleteStatus.text}

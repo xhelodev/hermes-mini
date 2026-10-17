@@ -19,8 +19,8 @@ import {
   useArchivedSessions,
 } from '@/lib/archived-sessions';
 import { confirmAction } from '@/lib/confirm';
-import { describeHermesError, HermesError, type HermesSession } from '@/lib/hermes';
-import { forgetSentImages } from '@/lib/sent-images';
+import { describeHermesError, type HermesSession } from '@/lib/hermes';
+import { hideSessions } from '@/lib/hidden-sessions';
 import { useSessionActivity } from '@/lib/session-activity';
 import type { SwipeActionId } from '@/lib/swipe-actions';
 
@@ -124,17 +124,13 @@ function ArchivadasBody() {
   function onDelete(source: HermesSession) {
     confirmAction({
       title: str.sessions.deleteTitle,
-      message: str.common.deleteFromServer,
+      message: str.sessions.deleteMessage,
       confirmLabel: str.common.delete,
       destructive: true,
       onConfirm: () => {
+        // Solo de la app: en Hermes queda archivada.
         void act(async () => {
-          try {
-            await client.deleteSession(source.id);
-          } catch (err) {
-            if (!(err instanceof HermesError && err.code === 'not_found')) throw err;
-          }
-          void forgetSentImages([source.id]);
+          await hideSessions(client, [source.id]);
           await forgetArchived(client, [source.id]);
         });
       },

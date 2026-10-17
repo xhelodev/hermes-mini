@@ -194,6 +194,7 @@ export const es = {
     forkTitle: 'Ramificar conversación',
     forkMessage: 'Ramificar cierra esta conversación en el servidor y abre una copia.',
     deleteTitle: 'Borrar conversación',
+    deleteMessage: 'Se quita solo de la app. En Hermes sigue guardada.',
     empty: 'Todavía no hay conversaciones.',
     responding: 'Respondiendo…',
     youPrefix: 'Vos: ',
@@ -327,19 +328,20 @@ export const es = {
     confirmTitle: (label: string) => `Borrar conversaciones: ${label.toLowerCase()}`,
     confirmMessage: (count: number) =>
       count === 1
-        ? 'Se elimina 1 conversación del servidor. No se puede deshacer.'
-        : `Se eliminan ${count} conversaciones del servidor. No se puede deshacer.`,
+        ? 'Se quita 1 conversación de la app. En Hermes sigue guardada.'
+        : `Se quitan ${count} conversaciones de la app. En Hermes siguen guardadas.`,
     deleteAll: 'Borrar todas las conversaciones',
     deleteAllMessage:
-      'Se eliminan todas las conversaciones del servidor, también las fijadas. Las archivadas y las que están respondiendo se conservan. No se puede deshacer.',
+      'Se quitan todas las conversaciones de la app, también las fijadas. En Hermes siguen guardadas. Las archivadas y las que están respondiendo se conservan.',
     deleteAllConfirm: 'Borrar todas',
     deleting: 'Borrando…',
     done: (count: number) =>
       count === 1 ? 'Se borró 1 conversación.' : `Se borraron ${count} conversaciones.`,
-    failed: (count: number) =>
-      count === 1
-        ? 'No se pudo borrar 1 conversación.'
-        : `No se pudieron borrar ${count} conversaciones.`,
+    restore: 'Recuperar conversaciones borradas',
+    restoreMessage: 'Las conversaciones que borraste de la app vuelven a la lista. Siguen en Hermes, así que no se perdió nada.',
+    restoreConfirm: 'Recuperar',
+    restored: (count: number) =>
+      count === 1 ? 'Se recuperó 1 conversación.' : `Se recuperaron ${count} conversaciones.`,
   },
 };
 
