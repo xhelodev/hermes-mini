@@ -2,6 +2,8 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { auth, request, startTestServer } from './helpers.mjs';
 
+process.env.MOCK_SLOW_WORD_MS = '30';
+
 describe('Hermes mock gateway', () => {
   let ctx;
 
@@ -150,6 +152,74 @@ describe('Hermes mock gateway', () => {
     assert.equal(fetched.json.archived, true);
     await patch({ archived: false });
     assert.equal(await listed(), true);
+  });
+
+  describe('steer on a slow session stream', () => {
+    // Abre el stream lento y espera el primer evento para tener el run_id.
+    async function openSlowStream(sessionId) {
+      const controller = new AbortController();
+      const response = await fetch(`${ctx.url}/api/sessions/${sessionId}/chat/stream`, {
+        method: 'POST',
+        headers: { ...auth({ 'X-Mock-Fault': 'slowstream' }), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: 'hello' }),
+        signal: controller.signal,
+      });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+      while (!/"run_id":"/.test(text)) text += decoder.decode((await reader.read()).value);
+      const runId = text.match(/"run_id":"([^"]+)"/)[1];
+      const rest = (async () => {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) return text;
+          text += decoder.decode(value);
+        }
+      })();
+      return { runId, rest, abort: () => controller.abort() };
+    }
+    const steer = (runId, input) =>
+      request(ctx.port, `/v1/runs/${runId}/steer`, { method: 'POST', headers: auth(), body: { input } });
+    const newSession = async () =>
+      (await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} })).json.id;
+
+    it('delivers an early steer as a steer row', async () => {
+      const id = await newSession();
+      const stream = await openSlowStream(id);
+      const accepted = await steer(stream.runId, 'use docs');
+      assert.equal(accepted.status, 200);
+      assert.equal(accepted.json.accepted, true);
+      const text = await stream.rest;
+      assert.match(text, /corrección recibida: use docs/);
+      assert.doesNotMatch(text, /"pending_steer"/);
+      const msgs = (await request(ctx.port, `/api/sessions/${id}/messages`, { headers: auth() })).json.data;
+      const row = msgs.find((m) => m.display_kind === 'steer');
+      assert.match(row.content, /OUT-OF-BAND USER MESSAGE[\s\S]*use docs/);
+      assert.equal(msgs.at(-1).role, 'assistant');
+    });
+
+    it('returns a late steer as pending_steer, and refuses one after the run ends', async () => {
+      const id = await newSession();
+      const stream = await openSlowStream(id);
+      // Pasada la mitad del turno ya no se entrega.
+      await new Promise((resolve) => setTimeout(resolve, 30 * 24));
+      await steer(stream.runId, 'too late');
+      const text = await stream.rest;
+      assert.match(text, /"pending_steer":"too late"/);
+      const refused = await steer(stream.runId, 'way too late');
+      assert.equal(refused.status, 409);
+      assert.equal(refused.json.error.code, 'run_not_accepting_steer');
+    });
+
+    it('cancels the run when the client disconnects', async () => {
+      const id = await newSession();
+      const stream = await openSlowStream(id);
+      stream.abort();
+      await stream.rest.catch(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, 30 * 3));
+      const run = (await request(ctx.port, `/v1/runs/${stream.runId}`, { headers: auth() })).json;
+      assert.equal(run.status, 'cancelled');
+    });
   });
 
   it('run idempotency replays same run_id', async () => {

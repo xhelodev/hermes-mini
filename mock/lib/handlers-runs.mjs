@@ -73,3 +73,25 @@ export function handleRunStop(_req, res, runId) {
   pushRunEvent(runId, { type: 'run.cancelled', run_id: runId });
   sendJson(res, 200, { status: 'stopping' });
 }
+
+export function handleRunSteer(_req, res, runId, body) {
+  const run = getRun(runId);
+  if (!run) return sendJson(res, 404, openAiError('Run not found', 'not_found_error', 'run_not_found'));
+  if (run.status !== 'running') {
+    return sendJson(
+      res,
+      409,
+      openAiError(`Run is not currently accepting steer input: ${runId}`, 'invalid_request_error', 'run_not_accepting_steer'),
+    );
+  }
+  const text = String(body?.input || body?.message || body?.text || '').trim();
+  if (!text) {
+    return sendJson(
+      res,
+      400,
+      openAiError("Missing non-empty steer text; expected 'input', 'message', or 'text'.", 'invalid_request_error', 'invalid_steer_input'),
+    );
+  }
+  (run.steers ??= []).push(text);
+  sendJson(res, 200, { object: 'hermes.run.steer', run_id: runId, accepted: true });
+}

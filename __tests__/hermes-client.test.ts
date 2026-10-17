@@ -94,6 +94,23 @@ describe('mapeo de sesiones', () => {
     expect(messages[0]?.attachments).toEqual([{ kind: 'image', label: 'Imagen', url: 'x' }]);
   });
 
+  it('muestra la corrección sin el marcador de Hermes', () => {
+    const messages = mapMessages({
+      data: [
+        {
+          id: 3,
+          role: 'user',
+          display_kind: 'steer',
+          content:
+            '[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; not tool output and not a new delivery when replayed from conversation history]\nUsá la carpeta docs\n[/OUT-OF-BAND USER MESSAGE]',
+        },
+        { id: 4, role: 'user', content: 'Hola' },
+      ],
+    });
+    expect(messages[0]).toMatchObject({ text: 'Usá la carpeta docs', steer: true });
+    expect(messages[1]).toMatchObject({ text: 'Hola', steer: false });
+  });
+
   it('deja el razonamiento fuera del texto', () => {
     const messages = mapMessages({
       data: [
@@ -422,6 +439,22 @@ describe('cliente Hermes', () => {
     const url = new URL(String(fetchImpl.mock.calls[0]?.[0]));
     expect(url.searchParams.get('order')).toBe('latest');
     expect(url.searchParams.get('limit')).toBe('1');
+  });
+
+  it('manda una corrección al turno en curso', async () => {
+    const fetchImpl = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      json(200, { object: 'hermes.run.steer', run_id: 'run_1', accepted: true }),
+    );
+    const client = new HermesClient({
+      baseUrl: 'http://127.0.0.1:8642',
+      apiKey: 'mock-test-key',
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    await client.steerRun('run_1', 'usá la otra carpeta');
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(String(url)).toBe('http://127.0.0.1:8642/v1/runs/run_1/steer');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ input: 'usá la otra carpeta' });
   });
 
   it('consulta el estado de un turno', async () => {

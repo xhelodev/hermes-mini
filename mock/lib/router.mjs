@@ -12,7 +12,7 @@ import {
   handleSessionChat,
   handleSessionMessages,
 } from './handlers-sessions.mjs';
-import { handleCreateRun, handleGetRun, handleRunEvents, handleRunStop } from './handlers-runs.mjs';
+import { handleCreateRun, handleGetRun, handleRunEvents, handleRunSteer, handleRunStop } from './handlers-runs.mjs';
 import { getRequestPath, openAiError, parseJsonBody, readRawBody, sendJson } from './http.mjs';
 import { getModelOptionsOverride, setModelOptionsOverride } from './store.mjs';
 
@@ -117,6 +117,7 @@ export async function handleRequest(req, res) {
     if (method === 'GET' && sub === '') return handleGetRun(req, res, runId);
     if (method === 'GET' && sub === '/events') return handleRunEvents(req, res, runId);
     if (method === 'POST' && sub === '/stop') return handleRunStop(req, res, runId);
+    if (method === 'POST' && sub === '/steer') return handleRunSteer(req, res, runId, body);
   }
 
   return sendJson(res, 404, openAiError(`Route not found: ${method} ${pathname}`));

@@ -245,6 +245,14 @@ export class HermesClient {
     return run;
   }
 
+  /** Le pasa una corrección al turno en curso; el agente la lee al terminar lo que está haciendo. */
+  async steerRun(runId: string, text: string): Promise<void> {
+    await this.request(`/v1/runs/${encodeURIComponent(runId)}/steer`, {
+      method: 'POST',
+      body: { input: text },
+    });
+  }
+
   async stopRun(runId: string): Promise<void> {
     await this.request(`/v1/runs/${encodeURIComponent(runId)}/stop`, { method: 'POST' });
   }

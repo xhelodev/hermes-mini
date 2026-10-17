@@ -271,6 +271,11 @@ export const en: Messages = {
     notSaved: "Hermes couldn't save the conversation.",
     other: (code) => `The response failed (${code}).`,
   },
+  steer: {
+    label: 'Correction',
+    action: 'Correct now',
+    hint: 'The agent is still working: correct it now, or send to queue it for when it finishes.',
+  },
   approval: {
     prompt: 'The agent wants to run a command.',
     theTool: 'the tool',

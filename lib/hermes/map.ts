@@ -67,7 +67,16 @@ export type HermesMessage = {
   reasoning: string;
   toolName: string | null;
   attachments: HermesAttachment[];
+  /** Corrección que el usuario mandó con el turno en curso (`/steer`). */
+  steer: boolean;
 };
+
+/** Hermes entrega cada corrección envuelta en este marcador; en pantalla va solo el texto. */
+const STEER_MARKER = /^\s*\[OUT-OF-BAND USER MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND USER MESSAGE\]\s*$/;
+
+export function steerText(text: string): string {
+  return STEER_MARKER.exec(text)?.[1] ?? text;
+}
 
 export type ModelSelection = {
   providerId: string;
@@ -305,14 +314,17 @@ export function mapMessages(payload: unknown): HermesMessage[] {
     const record = asRecord(row);
     if (!record) return [];
     const role = (stringField(record, 'role') || 'other').toLowerCase();
+    const steer = record.display_kind === 'steer';
+    const text = messageText(record.content);
     return [
       {
         id: stringField(record, 'id') || `msg-${index}`,
         role,
-        text: messageText(record.content),
+        text: steer ? steerText(text) : text,
         reasoning: messageReasoning(record.content, record),
         toolName: stringField(record, 'tool_name') || stringField(record, 'tool'),
         attachments: messageAttachments(record.content),
+        steer,
       },
     ];
   });

@@ -271,6 +271,11 @@ export const es = {
     notSaved: 'Hermes no pudo guardar la conversación.',
     other: (code: string) => `La respuesta falló (${code}).`,
   },
+  steer: {
+    label: 'Corrección',
+    action: 'Corregir ahora',
+    hint: 'El agente sigue trabajando: corregilo ahora o enviá para mandarlo al terminar.',
+  },
   approval: {
     prompt: 'El agente quiere ejecutar un comando.',
     theTool: 'la herramienta',

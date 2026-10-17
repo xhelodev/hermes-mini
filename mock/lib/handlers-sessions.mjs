@@ -92,7 +92,9 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
     appendMessage(id, { role: 'user', content: parsed.content });
     const runtime = resolveRuntime(body || {});
     const text = mockAssistantText(body || {}, runtime);
-    const crashed = stream && getFault(req) === 'agenterror';
+    const fault = stream ? getFault(req) : '';
+    const crashed = fault === 'agenterror';
+    if (fault === 'slowstream') return await streamSlowly(res, id, runId, text, runtime);
     if (!crashed) appendMessage(id, { role: 'assistant', content: text });
 
     if (stream) {
@@ -132,4 +134,65 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
   } finally {
     releaseRunSlot();
   }
+}
+
+const STEER_OPEN =
+  '[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; ' +
+  'not tool output and not a new delivery when replayed from conversation history]';
+const STEER_CLOSE = '[/OUT-OF-BAND USER MESSAGE]';
+const SLOW_FILLER =
+  'Este turno avanza despacio para probar las correcciones: mandá una antes de la mitad y ' +
+  'el agente la lee a mitad de camino; mandala después y vuelve como pending_steer al terminar.';
+// Los tests lo bajan para no esperar segundos.
+const slowWordMs = () => Number(process.env.MOCK_SLOW_WORD_MS) || 400;
+
+/**
+ * Turno lento (fault `slowstream`) para probar `/steer` y los cortes. Como Hermes: las
+ * correcciones que llegan antes de la mitad se entregan (quedan como fila `steer` en el
+ * historial), las que llegan después vuelven en `pending_steer`, y si el cliente se
+ * desconecta el turno se detiene (`cancelled`).
+ */
+async function streamSlowly(res, sessionId, runId, text, runtime) {
+  const run = completeRun(runId, 'running', { steers: [] });
+  let closed = false;
+  res.on('close', () => {
+    closed = !res.writableFinished;
+  });
+  initSse(res);
+  const stop = startKeepalive(res);
+  // Largo a propósito: unas 30 palabras dan tiempo de mandar una corrección desde el teléfono.
+  const words = `${text}\n\n${SLOW_FILLER}`.split(/(?<= )/);
+  const checkpoint = Math.ceil(words.length / 2);
+  let reply = '';
+  let delivered = 0;
+  for (const [index, word] of words.entries()) {
+    if (closed) {
+      clearInterval(stop);
+      if (reply) appendMessage(sessionId, { role: 'assistant', content: reply });
+      completeRun(runId, 'cancelled', { output: reply });
+      return;
+    }
+    if (index === checkpoint && run.steers.length > 0) {
+      const steer = run.steers.join('\n');
+      delivered = run.steers.length;
+      appendMessage(sessionId, { role: 'user', content: `${STEER_OPEN}\n${steer}\n${STEER_CLOSE}`, display_kind: 'steer' });
+      const ack = `(corrección recibida: ${steer}) `;
+      reply += ack;
+      sseWrite(res, { type: 'assistant.delta', run_id: runId, delta: ack }, 'assistant.delta');
+    }
+    reply += word;
+    sseWrite(res, { type: 'assistant.delta', run_id: runId, delta: word }, 'assistant.delta');
+    await new Promise((resolve) => setTimeout(resolve, slowWordMs()));
+  }
+  appendMessage(sessionId, { role: 'assistant', content: reply });
+  const late = run.steers.slice(delivered).join('\n');
+  completeRun(runId, 'completed', { output: reply, runtime, ...(late ? { pending_steer: late } : {}) });
+  sseWrite(
+    res,
+    { type: 'run.completed', run_id: runId, status: 'completed', runtime, ...(late ? { pending_steer: late } : {}) },
+    'run.completed',
+  );
+  sseWrite(res, { type: 'done', run_id: runId }, 'done');
+  clearInterval(stop);
+  res.end();
 }
