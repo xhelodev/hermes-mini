@@ -1,9 +1,11 @@
+import { strings } from '@/lib/i18n';
 import {
   advanceStatus,
   createStreamWatchdog,
   elapsedLabel,
   phaseAfterEvent,
   phaseLabel,
+  runFailureMessage,
   statusLabel,
   stopReason,
 } from '@/lib/stream-progress';
@@ -115,5 +117,23 @@ describe('vigilancia del stream', () => {
     jest.advanceTimersByTime(2000);
     expect(onSlow).not.toHaveBeenCalled();
     watchdog.stop();
+  });
+});
+
+describe('fallo de un turno', () => {
+  it('lee el error de run.failed y de la caída del agente', () => {
+    expect(runFailureMessage('run.failed', { error: 'Sin crédito' })).toBe('Sin crédito');
+    expect(runFailureMessage('run.failed', { error: { message: 'Límite' } })).toBe('Límite');
+    expect(runFailureMessage('error', { message: 'Se cayó el proveedor' })).toBe('Se cayó el proveedor');
+  });
+
+  it('usa un texto genérico si el servidor no explica', () => {
+    expect(runFailureMessage('error', {})).toBe(strings().chat.runFailed);
+    expect(runFailureMessage('run.failed', { error: '  ' })).toBe(strings().chat.runFailed);
+  });
+
+  it('no trata otros eventos como fallo', () => {
+    expect(runFailureMessage('run.completed', { error: 'x' })).toBeNull();
+    expect(runFailureMessage('done', {})).toBeNull();
   });
 });

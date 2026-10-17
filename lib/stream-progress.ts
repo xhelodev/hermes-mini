@@ -95,6 +95,20 @@ export type StreamStop = {
 };
 
 /**
+ * Texto del fallo si el evento termina el turno con error; `null` si no es un fallo. Hermes
+ * manda `run.failed` cuando el agente no termina, y `error` (sin `run.failed`) si se cae.
+ */
+export function runFailureMessage(name: string, data: Record<string, unknown>): string | null {
+  if (name !== 'run.failed' && name !== 'error') return null;
+  const raw = name === 'error' ? data.message : data.error;
+  if (typeof raw === 'string' && raw.trim()) return raw;
+  if (raw && typeof raw === 'object' && 'message' in raw && typeof raw.message === 'string' && raw.message.trim()) {
+    return raw.message;
+  }
+  return strings().chat.runFailed;
+}
+
+/**
  * Decide cómo cerrar un turno que lanzó. El orden importa: un corte por reloj (`lost`) o una
  * cancelación del usuario (`aborted`) mandan sobre el hecho de haber minimizado la app, porque
  * en esos dos casos no tiene sentido recuperar nada.

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { getFault } from './faults.mjs';
 import { openAiError, sendJson } from './http.mjs';
 import { mockAssistantText, resolveRuntime } from './runtime.mjs';
 import { initSse, sseWrite, startKeepalive } from './sse.mjs';
@@ -55,13 +56,22 @@ export function handleSessionMessages(req, res, id) {
   const s = getSession(id);
   if (!s) return sendJson(res, 404, openAiError('Session not found', 'not_found_error'));
   const params = new URL(req.url || '/', 'http://mock').searchParams;
-  let data = params.get('order') === 'newest' ? [...s.messages].reverse() : s.messages;
+  const order = params.get('order');
+  // Como Hermes: solo `oldest` o `latest`; `latest` toma la última página, en orden cronológico.
+  if (order !== null && order !== 'oldest' && order !== 'latest') {
+    return sendJson(
+      res,
+      400,
+      openAiError('order must be one of: oldest, latest', 'invalid_request_error', 'invalid_pagination'),
+    );
+  }
   const limit = Number.parseInt(params.get('limit') || '', 10);
-  if (limit > 0) data = data.slice(0, limit);
+  let data = s.messages;
+  if (limit > 0) data = order === 'latest' ? data.slice(-limit) : data.slice(0, limit);
   sendJson(res, 200, { object: 'list', data });
 }
 
-export async function handleSessionChat(_req, res, id, body, { stream = false } = {}) {
+export async function handleSessionChat(req, res, id, body, { stream = false } = {}) {
   const s = getSession(id);
   if (!s) return sendJson(res, 404, openAiError('Session not found', 'not_found_error'));
 
@@ -80,13 +90,20 @@ export async function handleSessionChat(_req, res, id, body, { stream = false } 
     appendMessage(id, { role: 'user', content: parsed.content });
     const runtime = resolveRuntime(body || {});
     const text = mockAssistantText(body || {}, runtime);
-    appendMessage(id, { role: 'assistant', content: text });
+    const crashed = stream && getFault(req) === 'agenterror';
+    if (!crashed) appendMessage(id, { role: 'assistant', content: text });
 
     if (stream) {
       initSse(res);
       const stop = startKeepalive(res);
-      sseWrite(res, { type: 'assistant.delta', run_id: runId, delta: text }, 'assistant.delta');
-      sseWrite(res, { type: 'run.completed', run_id: runId, status: 'completed', runtime }, 'run.completed');
+      if (crashed) {
+        // Como Hermes cuando el agente lanza: `error` y `done`, sin `run.failed`.
+        sseWrite(res, { type: 'error', run_id: runId, message: 'Fault injection: agent crashed' }, 'error');
+      } else {
+        sseWrite(res, { type: 'assistant.delta', run_id: runId, delta: text }, 'assistant.delta');
+        sseWrite(res, { type: 'run.completed', run_id: runId, status: 'completed', runtime }, 'run.completed');
+      }
+      sseWrite(res, { type: 'done', run_id: runId }, 'done');
       clearInterval(stop);
       res.end();
       return;
