@@ -26,6 +26,14 @@ type RequestOptions = {
   auth?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
+  headers?: Record<string, string>;
+};
+
+/** Estado de un run según `GET /v1/runs/{id}`. */
+export type HermesRunState = {
+  status: string;
+  output: string;
+  error: string | null;
 };
 
 type HermesClientOptions = {
@@ -320,11 +328,76 @@ export class HermesClient {
       body.model = model.modelId;
     }
     const path = `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`;
+    await this.stream('POST', path, body, onEvent, signal, hooks);
+  }
+
+  /**
+   * Arranca un turno con `POST /v1/runs` en la sesión y devuelve el id del run. Con la misma
+   * `idempotencyKey`, reintentar no duplica el turno: Hermes devuelve el run original.
+   */
+  async createRun(
+    sessionId: string,
+    input: string,
+    model: Pick<ModelSelection, 'providerId' | 'modelId'> | null,
+    idempotencyKey: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const body: Record<string, unknown> = { input, session_id: sessionId };
+    if (model?.providerId && model.modelId) {
+      body.provider = model.providerId;
+      body.model = model.modelId;
+    }
+    const payload = asRecord(
+      await this.request('/v1/runs', {
+        method: 'POST',
+        body,
+        signal,
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }),
+    );
+    const runId = payload?.run_id;
+    if (typeof runId !== 'string' || !runId) {
+      throw new HermesError('bad_response', strings().errors.missingRun);
+    }
+    return runId;
+  }
+
+  /** Eventos del run posteriores a `lastSeq`; resuelve cuando el servidor cierra el stream. */
+  async followRun(
+    runId: string,
+    lastSeq: number,
+    onEvent: (event: SseEvent) => void,
+    signal?: AbortSignal,
+    hooks: StreamHooks = {},
+  ): Promise<void> {
+    const path = `/v1/runs/${encodeURIComponent(runId)}/events?last_seq=${lastSeq}`;
+    await this.stream('GET', path, null, onEvent, signal, hooks);
+  }
+
+  async getRun(runId: string, signal?: AbortSignal): Promise<HermesRunState> {
+    const payload = asRecord(await this.request(`/v1/runs/${encodeURIComponent(runId)}`, { signal }));
+    const status = typeof payload?.status === 'string' ? payload.status : 'running';
+    const error = payload?.error;
+    return {
+      status,
+      output: typeof payload?.output === 'string' ? payload.output : '',
+      error: typeof error === 'string' && error.trim() ? error : errorMessage({ error }, '') || null,
+    };
+  }
+
+  private async stream(
+    method: 'GET' | 'POST',
+    path: string,
+    body: Record<string, unknown> | null,
+    onEvent: (event: SseEvent) => void,
+    signal: AbortSignal | undefined,
+    hooks: StreamHooks,
+  ): Promise<void> {
     if (isReactNative()) {
-      await this.streamWithXhr(path, body, onEvent, signal, hooks);
+      await this.streamWithXhr(method, path, body, onEvent, signal, hooks);
       return;
     }
-    await this.streamWithFetch(path, body, onEvent, signal, hooks);
+    await this.streamWithFetch(method, path, body, onEvent, signal, hooks);
   }
 
   private requireSession(payload: unknown, fallback: string): HermesSession {
@@ -354,7 +427,7 @@ export class HermesClient {
   private async request(path: string, options: RequestOptions = {}): Promise<unknown> {
     const timeout = this.linkTimeout(options.timeoutMs ?? this.timeoutMs, options.signal);
     try {
-      const headers: Record<string, string> = { Accept: 'application/json' };
+      const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
       if (options.auth !== false && this.apiKey) {
         headers.Authorization = `Bearer ${this.apiKey}`;
       }
@@ -386,8 +459,9 @@ export class HermesClient {
   }
 
   private async streamWithFetch(
+    method: 'GET' | 'POST',
     path: string,
-    body: Record<string, unknown>,
+    body: Record<string, unknown> | null,
     onEvent: (event: SseEvent) => void,
     signal: AbortSignal | undefined,
     hooks: StreamHooks,
@@ -396,9 +470,9 @@ export class HermesClient {
       let response: Response;
       try {
         response = await this.fetchImpl(joinUrl(this.baseUrl, path), {
-          method: 'POST',
-          headers: this.streamHeaders(),
-          body: JSON.stringify(body),
+          method,
+          headers: this.streamHeaders(body !== null),
+          body: body !== null ? JSON.stringify(body) : undefined,
           signal,
         });
       } catch (error) {
@@ -419,8 +493,9 @@ export class HermesClient {
   }
 
   private streamWithXhr(
+    method: 'GET' | 'POST',
     path: string,
-    body: Record<string, unknown>,
+    body: Record<string, unknown> | null,
     onEvent: (event: SseEvent) => void,
     signal: AbortSignal | undefined,
     hooks: StreamHooks,
@@ -451,8 +526,8 @@ export class HermesClient {
         parsed.events.forEach(onEvent);
       };
 
-      xhr.open('POST', joinUrl(this.baseUrl, path));
-      const headers = this.streamHeaders();
+      xhr.open(method, joinUrl(this.baseUrl, path));
+      const headers = this.streamHeaders(body !== null);
       for (const [key, value] of Object.entries(headers)) {
         xhr.setRequestHeader(key, value);
       }
@@ -486,16 +561,17 @@ export class HermesClient {
         }
         signal.addEventListener('abort', () => xhr.abort(), { once: true });
       }
-      xhr.send(JSON.stringify(body));
+      xhr.send(body !== null ? JSON.stringify(body) : null);
     });
   }
 
-  private streamHeaders(): Record<string, string> {
-    return {
+  private streamHeaders(withBody: boolean): Record<string, string> {
+    const headers: Record<string, string> = {
       Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
       Authorization: `Bearer ${this.apiKey}`,
     };
+    if (withBody) headers['Content-Type'] = 'application/json';
+    return headers;
   }
 
   private linkTimeout(ms: number, parent?: AbortSignal): {

@@ -140,6 +140,50 @@ describe('Hermes mock gateway', () => {
     assert.equal(b.headers.get('idempotency-replayed'), 'true');
   });
 
+  it('runs attach to a session and replay events after last_seq', async () => {
+    const created = await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: { title: 'Runs' } });
+    const sessionId = created.json.session?.id ?? created.json.id;
+    const run = await request(ctx.port, '/v1/runs', {
+      method: 'POST',
+      headers: auth({ 'Idempotency-Key': 'idem-run-session' }),
+      body: { input: 'hola', session_id: sessionId },
+    });
+    assert.equal(run.status, 202);
+    const runId = run.json.run_id;
+
+    const frames = (text) =>
+      text
+        .split('\n\n')
+        .filter((block) => block.includes('data: '))
+        .map((block) => JSON.parse(block.slice(block.indexOf('data: ') + 6)));
+    const all = frames((await request(ctx.port, `/v1/runs/${runId}/events`, { headers: auth() })).text);
+    assert.equal(all.at(-1).event, 'run.completed');
+    assert.ok(all.every((event, index) => event.seq === index));
+    assert.ok(!(await request(ctx.port, `/v1/runs/${runId}/events`, { headers: auth() })).text.includes('event:'));
+
+    const rest = frames((await request(ctx.port, `/v1/runs/${runId}/events?last_seq=0`, { headers: auth() })).text);
+    assert.equal(rest[0].seq, 1);
+    assert.equal(rest.map((event) => event.delta ?? '').join(''), all.map((event) => event.delta ?? '').join('').slice(all[0].delta.length));
+
+    const status = await request(ctx.port, `/v1/runs/${runId}`, { headers: auth() });
+    assert.equal(status.json.status, 'completed');
+    assert.equal(status.json.output, all.at(-1).output);
+
+    const messages = await request(ctx.port, `/api/sessions/${sessionId}/messages`, { headers: auth() });
+    const last = messages.json.data.at(-1);
+    assert.equal(last.role, 'assistant');
+    assert.equal(last.finish_reason, 'stop');
+  });
+
+  it('runs report agent crashes as run.failed', async () => {
+    const run = await request(ctx.port, '/v1/runs?fault=agenterror', { method: 'POST', headers: auth(), body: { input: 'x' } });
+    const status = await request(ctx.port, `/v1/runs/${run.json.run_id}`, { headers: auth() });
+    assert.equal(status.json.status, 'failed');
+    const missing = await request(ctx.port, '/v1/runs/nope/events', { headers: auth() });
+    assert.equal(missing.status, 404);
+    assert.equal(missing.json.error.code, 'run_not_found');
+  });
+
   it('fault injection 401 via header', async () => {
     const r = await request(ctx.port, '/v1/models', { headers: auth({ 'X-Mock-Fault': '401' }) });
     assert.equal(r.status, 401);

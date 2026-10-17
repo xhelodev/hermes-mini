@@ -5,7 +5,8 @@ export type SseEvent = {
 
 export function sseEventName(event: SseEvent): string {
   if (event.event) return event.event;
-  const type = event.data.type;
+  // `/v1/runs` no manda la línea `event:`: el nombre viene en el JSON.
+  const type = event.data.type ?? event.data.event;
   return typeof type === 'string' ? type : '';
 }
 

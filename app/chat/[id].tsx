@@ -38,6 +38,9 @@ import {
   HermesError,
   messageText,
   sseEventName,
+  waitForRunEnd,
+  watchRun,
+  withRetry,
   type ChatContentPart,
   type ChatInput,
   type HermesMessage,
@@ -131,6 +134,20 @@ function toolNote(message: HermesMessage): ReasoningNote {
     text: name,
     preview: body && body !== name ? body : undefined,
   };
+}
+
+/** Errores de red con los que vale la pena volver a intentar: el resto no se arregla solo. */
+const RETRYABLE_ERRORS = new Set(['down', 'timeout']);
+/** Cortes seguidos, con la app abierta, antes de dar el turno por perdido. */
+const MAX_LIVE_RETRIES = 3;
+const RUN_POLL_MS = 3000;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function untilActive(): Promise<void> {
+  return new Promise((resolve) => whenActive(resolve));
 }
 
 /** Corre `run` ya si la app está al frente, o cuando vuelva a estarlo. */
@@ -582,6 +599,11 @@ function ChatBody() {
     let lost = false;
     // Al minimizar la app el sistema puede cortar el socket aunque el servidor siga con el turno.
     let backgrounded = false;
+    // El texto va por `/v1/runs`: el run sigue en el servidor si se corta la conexión.
+    const viaRun = typeof payload === 'string';
+    let resumed = false;
+    let liveFailures = 0;
+    const idempotencyKey = `${sessionId}-${message.userLineId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const watchdog = createStreamWatchdog({
       onSlow: (slow) => {
         if (!alive.current) return;
@@ -625,34 +647,98 @@ function ChatBody() {
           await rememberSentImage(sessionId, imageFingerprint(file.dataUrl), file.uri);
         }
       }
-      await client.streamChat(
-        sessionId,
-        payload,
-        model ? { providerId: model.providerId, modelId: model.modelId } : null,
-        (event) => {
-          track(event);
-          applyEvent(event, assistantId);
+      const selection = model ? { providerId: model.providerId, modelId: model.modelId } : null;
+      const onEvent = (event: SseEvent) => {
+        liveFailures = 0;
+        track(event);
+        applyEvent(event, assistantId);
+      };
+      const hooks = {
+        onUploadProgress: (fraction: number) => {
+          watchdog.touch();
+          advanceFrom(
+            ['uploading'],
+            fraction < 1 ? { kind: 'uploading', percent: Math.round(fraction * 100) } : { kind: 'waiting' },
+          );
         },
-        abort.signal,
-        {
-          onUploadProgress: (fraction) => {
-            watchdog.touch();
-            advanceFrom(
-              ['uploading'],
-              fraction < 1 ? { kind: 'uploading', percent: Math.round(fraction * 100) } : { kind: 'waiting' },
-            );
-          },
-          onOpen: () => {
-            watchdog.touch();
-            advanceFrom(['uploading', 'waiting'], { kind: 'thinking' });
-          },
-          onData: watchdog.touch,
+        onOpen: () => {
+          watchdog.touch();
+          advanceFrom(['uploading', 'waiting'], { kind: 'thinking' });
         },
-      );
+        onData: watchdog.touch,
+      };
+      // Se cortó la conexión pero el run sigue: reintentamos con la app al frente (en segundo
+      // plano Android no deja usar la red). Con la app abierta, solo unas veces y con pausa.
+      const waitToRetry = async (error: unknown) => {
+        if (lost || abort.signal.aborted) return false;
+        if (!(error instanceof HermesError) || !RETRYABLE_ERRORS.has(error.code)) return false;
+        if (AppState.currentState === 'active') {
+          liveFailures += 1;
+          if (liveFailures > MAX_LIVE_RETRIES) return false;
+          await delay(1000 * liveFailures);
+        }
+        await untilActive();
+        return !abort.signal.aborted;
+      };
+      if (viaRun) {
+        const runId = await withRetry(
+          () => client.createRun(sessionId, payload, selection, idempotencyKey, abort.signal),
+          waitToRetry,
+        );
+        runIdRef.current = runId;
+        // Si tocó Detener mientras se creaba, el id recién llega ahora.
+        if (abort.signal.aborted) {
+          void client.stopRun(runId).catch(() => undefined);
+          return;
+        }
+        const result = await watchRun({
+          follow: (lastSeq, handle) => client.followRun(runId, lastSeq, handle, abort.signal, hooks),
+          onEvent,
+          waitToRetry,
+          onResume: () => {
+            resumed = true;
+          },
+        });
+        if (result === 'expired') {
+          // Hermes ya descartó los eventos (nadie los leyó por un rato): preguntamos cómo terminó.
+          const state = await waitForRunEnd({
+            getState: async () => {
+              const current = await client.getRun(runId, abort.signal);
+              watchdog.touch();
+              return current;
+            },
+            waitToRetry,
+            sleep: () => delay(RUN_POLL_MS),
+            signal: abort.signal,
+          });
+          reply = state.output || reply;
+          if (state.status === 'failed' || state.status === 'interrupted') {
+            const failure = state.error ?? str.chat.runFailed;
+            if (alive.current) {
+              setError(failure);
+              setRetry(prose ? { error: failure, text: prose } : null);
+            }
+          }
+        }
+        // Lo que se ve se armó en partes: traemos la conversación tal como la guardó Hermes.
+        if (resumed || result === 'expired') {
+          whenActive(() => {
+            if (alive.current) setReloadKey((key) => key + 1);
+          });
+        }
+      } else {
+        await client.streamChat(sessionId, payload, selection, onEvent, abort.signal, hooks);
+      }
     } catch (err) {
       if (!alive.current) return;
       const aborted = abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted');
-      const stop = stopReason({ lost, aborted, backgrounded, describe: () => describeHermesError(err) });
+      // Un run ya intentó reconectar: si igual falló, no hay nada más que recuperar.
+      const stop = stopReason({
+        lost,
+        aborted,
+        backgrounded: backgrounded && !viaRun,
+        describe: () => describeHermesError(err),
+      });
       if (stop.recover) {
         // Recargamos para ver cómo terminó el turno, pero con la app al frente: en segundo
         // plano Android le corta la red y la recarga fallaría.

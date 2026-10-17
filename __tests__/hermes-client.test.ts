@@ -306,6 +306,64 @@ describe('cliente Hermes', () => {
     await expect(client.probe()).rejects.toMatchObject({ code: 'unauthorized' });
   });
 
+  it('arranca un run en la sesión con clave de idempotencia', async () => {
+    const fetchImpl = jest.fn(
+      async () => new Response(JSON.stringify({ run_id: 'run_1', status: 'started' }), { status: 202 }),
+    );
+    const client = new HermesClient({ baseUrl: 'http://127.0.0.1:8642', apiKey: 'k', fetchImpl: fetchImpl as typeof fetch });
+    await expect(
+      client.createRun('sess_1', 'hola', { providerId: 'deepseek', modelId: 'deepseek-v4' }, 'clave-1'),
+    ).resolves.toBe('run_1');
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('http://127.0.0.1:8642/v1/runs');
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('clave-1');
+    expect(JSON.parse(String(init.body))).toEqual({
+      input: 'hola',
+      session_id: 'sess_1',
+      provider: 'deepseek',
+      model: 'deepseek-v4',
+    });
+  });
+
+  it('sigue los eventos de un run desde el último seq', async () => {
+    const encoder = new TextEncoder();
+    const fetchImpl = jest.fn(async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(': open\n\nid: 4\ndata: {"event":"message.delta","delta":"Ho","seq":4}\n\n'),
+          );
+          controller.enqueue(encoder.encode(': stream closed\n\n'));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
+    const client = new HermesClient({ baseUrl: 'http://127.0.0.1:8642', apiKey: 'k', fetchImpl: fetchImpl as typeof fetch });
+    const events: string[] = [];
+    await client.followRun('run_1', 3, (event) => events.push(sseEventName(event)));
+    expect(events).toEqual(['message.delta']);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('http://127.0.0.1:8642/v1/runs/run_1/events?last_seq=3');
+    expect(init.method).toBe('GET');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('lee el estado final de un run', async () => {
+    const fetchImpl = jest.fn(
+      async () =>
+        new Response(JSON.stringify({ run_id: 'run_1', status: 'failed', error: 'Se cayó el modelo.' }), {
+          status: 200,
+        }),
+    );
+    const client = new HermesClient({ baseUrl: 'http://127.0.0.1:8642', apiKey: 'k', fetchImpl: fetchImpl as typeof fetch });
+    await expect(client.getRun('run_1')).resolves.toEqual({
+      status: 'failed',
+      output: '',
+      error: 'Se cayó el modelo.',
+    });
+  });
+
   it('transcribe el stream de un turno', async () => {
     const encoder = new TextEncoder();
     const fetchImpl = jest.fn(async () => {

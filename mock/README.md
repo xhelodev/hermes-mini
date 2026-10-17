@@ -31,7 +31,7 @@ curl -s -H "Authorization: Bearer $HERMES_MOCK_KEY" http://localhost:8642/v1/mod
 | Content | Multimodal parts: only `image_url` (`http(s)` or `data:image/*`); `file`, `input_file`, non-image data URLs → `400` `unsupported_content_type` |
 | Limits | JSON bodies > 10 MB → `413`; no upload endpoint; >10 concurrent agent runs → `429` |
 | Sessions | `GET/POST /api/sessions`, `GET/PATCH/DELETE /api/sessions/{id}` (PATCH accepts `title`, `pinned`, `archived`; archived sessions are left out of the list unless pinned), `GET .../messages` (`order=oldest|latest`, anything else → `400` `invalid_pagination`), `POST .../chat` and `.../chat/stream` (`assistant.delta`, `run.completed` / `run.failed` / `run.cancelled`, then `done`) |
-| Runs | `POST /v1/runs` + `Idempotency-Key` (replays with `Idempotency-Replayed: true`), `GET /v1/runs/{id}`, `GET .../events`, `POST .../stop` |
+| Runs | `POST /v1/runs` (`input`, optional `session_id`: the turn is saved in that session) + `Idempotency-Key` (replays with `Idempotency-Replayed: true`), `GET /v1/runs/{id}` (`status`, `output`), `GET .../events` (SSE without `event:` lines: the JSON carries `event` and `seq`; resumes after `?last_seq=` / `Last-Event-ID`), `POST .../stop` |
 
 ### Gateway fault injection
 
@@ -43,7 +43,7 @@ Query `?fault=` or header `X-Mock-Fault`:
 | `down` | `503` |
 | `timeout` | Hang (no response) |
 | `cut` | Abort mid-stream (streaming chat) |
-| `agenterror` | Session chat stream sends `error` then `done`, without `run.failed` (agent crash) |
+| `agenterror` | Session chat stream sends `error` then `done`, without `run.failed` (agent crash); `POST /v1/runs` ends the run as `failed` |
 | `toolarge` | `413` |
 | `busy` | `429` |
 | `modeloptions:<json>` | Replace `GET /api/model/options` payload (URL-encoded JSON after prefix) |

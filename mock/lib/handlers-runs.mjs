@@ -1,15 +1,33 @@
-import { randomUUID } from 'node:crypto';
+import { getFault } from './faults.mjs';
 import { openAiError, sendJson } from './http.mjs';
 import { mockAssistantText, resolveRuntime } from './runtime.mjs';
-import { initSse, sseWrite, startKeepalive } from './sse.mjs';
+import { initSse, sseComment, startKeepalive } from './sse.mjs';
 import {
+  appendMessage,
   completeRun,
   createRun,
   getRun,
+  getSession,
   pushRunEvent,
   releaseRunSlot,
   tryAcquireRunSlot,
 } from './store.mjs';
+
+const DELTA_SIZE = 24;
+
+function runNotFound(res, runId) {
+  return sendJson(res, 404, openAiError(`Run not found: ${runId}`, 'invalid_request_error', 'run_not_found'));
+}
+
+/** Como Hermes 0.22: el JSON lleva `event`, `run_id`, `timestamp` y `seq`, sin línea `event:`. */
+function runEvent(run, event, fields = {}) {
+  const payload = { event, run_id: run.run_id, timestamp: Date.now() / 1000, ...fields, seq: run.events.length };
+  pushRunEvent(run.run_id, payload);
+}
+
+function writeRunEvent(res, payload) {
+  res.write(`id: ${payload.seq}\ndata: ${JSON.stringify(payload)}\n\n`);
+}
 
 export function handleCreateRun(req, res, body) {
   const key = req.headers['idempotency-key'] || req.headers['Idempotency-Key'];
@@ -21,7 +39,7 @@ export function handleCreateRun(req, res, body) {
     return sendJson(
       res,
       202,
-      { run_id: result.run.run_id, status: result.run.status },
+      { run_id: result.run.run_id, status: result.run.status, replayed: true },
       { 'Idempotency-Replayed': 'true' },
     );
   }
@@ -30,46 +48,66 @@ export function handleCreateRun(req, res, body) {
     return sendJson(res, 429, openAiError('Too many concurrent runs', 'rate_limit_error'));
   }
 
+  // El run corre aparte de quien lea sus eventos: queda completo antes de responder.
   const run = result.run;
-  const runtime = resolveRuntime(body || {});
-  const output = mockAssistantText(body || {}, runtime);
-  completeRun(run.run_id, 'completed', {
-    output,
-    runtime,
-    usage: { input_tokens: 5, output_tokens: 15, total_tokens: 20 },
-  });
-  pushRunEvent(run.run_id, { type: 'run.completed', status: 'completed', output, runtime });
+  const input = typeof body?.input === 'string' ? body.input : '';
+  const session = run.session_id ? getSession(run.session_id) : null;
+  if (session && input) appendMessage(session.id, { role: 'user', content: input });
+
+  if (getFault(req) === 'agenterror') {
+    const error = 'Fault injection: agent crashed';
+    completeRun(run.run_id, 'failed', { error });
+    runEvent(run, 'run.failed', { error });
+  } else {
+    const runtime = resolveRuntime(body || {});
+    const output = mockAssistantText(body || {}, runtime);
+    for (let i = 0; i < output.length; i += DELTA_SIZE) {
+      runEvent(run, 'message.delta', { delta: output.slice(i, i + DELTA_SIZE) });
+    }
+    const usage = { input_tokens: 5, output_tokens: 15, total_tokens: 20 };
+    completeRun(run.run_id, 'completed', { output, runtime, usage, completed: true, partial: false, interrupted: false });
+    runEvent(run, 'run.completed', { output, usage, runtime, completed: true, partial: false, interrupted: false });
+    if (session) appendMessage(session.id, { role: 'assistant', content: output, finish_reason: 'stop' });
+  }
   releaseRunSlot();
 
-  sendJson(res, 202, { run_id: run.run_id, status: 'started' });
+  sendJson(res, 202, { run_id: run.run_id, status: 'started', replayed: false });
 }
 
 export function handleGetRun(_req, res, runId) {
   const run = getRun(runId);
-  if (!run) return sendJson(res, 404, openAiError('Run not found', 'not_found_error'));
-  sendJson(res, 200, run);
+  if (!run) return runNotFound(res, runId);
+  const { events: _events, input: _input, ...status } = run;
+  sendJson(res, 200, { ...status, last_event: run.events.at(-1)?.event ?? null });
 }
 
-export function handleRunEvents(_req, res, runId) {
+/** Repite los eventos posteriores a `last_seq` (o `Last-Event-ID`) y cierra, como un run ya terminado. */
+export function handleRunEvents(req, res, runId) {
   const run = getRun(runId);
-  if (!run) return sendJson(res, 404, openAiError('Run not found', 'not_found_error'));
+  if (!run) return runNotFound(res, runId);
+
+  const url = new URL(req.url || '/', 'http://localhost');
+  const raw = req.headers['last-event-id'] ?? url.searchParams.get('last_seq');
+  const lastSeq = Number.parseInt(raw ?? '-1', 10);
 
   initSse(res);
+  sseComment(res, 'open');
   const stop = startKeepalive(res);
-  for (const ev of run.events) {
-    sseWrite(res, ev, ev.type || 'message');
+  for (const payload of run.events) {
+    if (payload.seq > (Number.isNaN(lastSeq) ? -1 : lastSeq)) writeRunEvent(res, payload);
   }
-  if (run.status === 'completed') {
-    sseWrite(res, { type: 'run.completed', run_id: runId, output: run.output, runtime: run.runtime }, 'run.completed');
-  }
+  sseComment(res, 'stream closed');
   clearInterval(stop);
   res.end();
 }
 
 export function handleRunStop(_req, res, runId) {
   const run = getRun(runId);
-  if (!run) return sendJson(res, 404, openAiError('Run not found', 'not_found_error'));
+  if (!run) return runNotFound(res, runId);
+  if (['completed', 'failed', 'cancelled'].includes(run.status)) {
+    return sendJson(res, 200, run);
+  }
   completeRun(runId, 'cancelled');
-  pushRunEvent(runId, { type: 'run.cancelled', run_id: runId });
-  sendJson(res, 200, { status: 'stopping' });
+  runEvent(run, 'run.cancelled');
+  sendJson(res, 200, { run_id: runId, status: 'stopping' });
 }

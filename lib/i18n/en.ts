@@ -55,6 +55,7 @@ export const en: Messages = {
     missingSession: "The server didn't return the conversation.",
     missingCopy: "The server didn't return the copy.",
     missingJob: "The server didn't return the task.",
+    missingRun: "The server didn't return the response id.",
     missingNewSession: "The server didn't return the new conversation.",
   },
   attach: {

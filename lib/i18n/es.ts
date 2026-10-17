@@ -55,6 +55,7 @@ export const es = {
     missingSession: 'El servidor no devolvió la conversación.',
     missingCopy: 'El servidor no devolvió la copia.',
     missingJob: 'El servidor no devolvió la tarea.',
+    missingRun: 'El servidor no devolvió el id de la respuesta.',
     missingNewSession: 'El servidor no devolvió la conversación nueva.',
   },
   attach: {
