@@ -11,7 +11,7 @@ describe('resolveSwipeConfig', () => {
       left: 'rename',
       right: 'fork',
     });
-    expect(resolveSwipeConfig(JSON.stringify({ left: 'archive', right: 'none' }))).toEqual({
+    expect(resolveSwipeConfig(JSON.stringify({ left: 'explode', right: 'none' }))).toEqual({
       left: 'delete',
       right: 'none',
     });
@@ -23,5 +23,10 @@ describe('swipeActionLabel', () => {
     expect(swipeActionLabel('pin')).toBe('Fijar');
     expect(swipeActionLabel('pin', true)).toBe('Quitar');
     expect(swipeActionLabel('fork')).toBe('Ramificar');
+  });
+
+  it('cambia el texto de archivar dentro de las archivadas', () => {
+    expect(swipeActionLabel('archive')).toBe('Archivar');
+    expect(swipeActionLabel('archive', false, true)).toBe('Desarchivar');
   });
 });

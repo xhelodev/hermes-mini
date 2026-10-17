@@ -35,6 +35,8 @@ export function createSession(meta = {}) {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     end_reason: null,
+    pinned: false,
+    archived: false,
     messages: [],
   };
   getState().sessions.set(id, session);
@@ -50,6 +52,8 @@ export function updateSession(id, patch) {
   if (!s) return null;
   if (patch.title !== undefined) s.title = patch.title;
   if (patch.end_reason !== undefined) s.end_reason = patch.end_reason;
+  if (typeof patch.pinned === 'boolean') s.pinned = patch.pinned;
+  if (typeof patch.archived === 'boolean') s.archived = patch.archived;
   s.updated_at = new Date().toISOString();
   return s;
 }

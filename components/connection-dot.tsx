@@ -3,6 +3,7 @@ import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { Text } from '@/components/ui/text';
 import { useConnection } from '@/contexts/connection-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { checkConnection, useConnectionHealth, type HealthStatus } from '@/lib/connection-health';
 
@@ -10,12 +11,6 @@ const COLORS: Record<HealthStatus, string> = {
   online: '#22c55e',
   checking: '#eab308',
   offline: '#ef4444',
-};
-
-const LABELS: Record<HealthStatus, string> = {
-  online: 'Conectado',
-  checking: 'Verificando…',
-  offline: 'Sin conexión',
 };
 
 /**
@@ -27,6 +22,7 @@ export function ConnectionDot() {
   const health = useConnectionHealth(client);
   const { theme } = useTheme();
   const t = theme.tokens;
+  const text = useStrings().health;
   const [expanded, setExpanded] = useState(false);
   const [pulse] = useState(() => new Animated.Value(1));
   const color = COLORS[health.status];
@@ -53,15 +49,16 @@ export function ConnectionDot() {
     return () => clearTimeout(id);
   }, [expanded, health.status]);
 
-  let detail = LABELS[health.status];
+  const label = text[health.status];
+  let detail = label;
   if (health.status === 'online' && health.latencyMs !== null) detail += ` · ${health.latencyMs} ms`;
   if (health.status === 'offline' && health.error) detail = health.error;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Estado de Hermes: ${LABELS[health.status]}`}
-      accessibilityHint="Toca para volver a verificar"
+      accessibilityLabel={text.label(label)}
+      accessibilityHint={text.hint}
       hitSlop={10}
       onPress={() => {
         setExpanded(true);

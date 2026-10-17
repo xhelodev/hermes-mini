@@ -87,6 +87,21 @@ describe('Hermes mock gateway', () => {
     assert.equal(msgs.json.data.length, 2);
   });
 
+  it('archived sessions leave the list until unarchived', async () => {
+    const created = await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} });
+    const id = created.json.id;
+    const listed = async () =>
+      (await request(ctx.port, '/api/sessions', { headers: auth() })).json.data.some((s) => s.id === id);
+    const patch = (body) => request(ctx.port, `/api/sessions/${id}`, { method: 'PATCH', headers: auth(), body });
+    assert.equal(await listed(), true);
+    assert.equal((await patch({ archived: true })).json.archived, true);
+    assert.equal(await listed(), false);
+    const fetched = await request(ctx.port, `/api/sessions/${id}`, { headers: auth() });
+    assert.equal(fetched.json.archived, true);
+    await patch({ archived: false });
+    assert.equal(await listed(), true);
+  });
+
   it('run idempotency replays same run_id', async () => {
     const headers = auth({ 'Idempotency-Key': 'idem-1' });
     const a = await request(ctx.port, '/v1/runs', { method: 'POST', headers, body: { input: 'x' } });

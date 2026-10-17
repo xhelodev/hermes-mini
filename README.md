@@ -9,6 +9,12 @@ npm install --legacy-peer-deps
 npm start
 ```
 
+## Idiomas
+
+La app toma el idioma del teléfono (`expo-localization`): español o inglés, y cae en inglés si el teléfono está en otro idioma. El idioma de dictado arranca con la variante del teléfono hasta que se elige otro en Ajustes.
+
+Los textos están en `lib/i18n/es.ts` (fuente de verdad) y `lib/i18n/en.ts`. En componentes se leen con `useStrings()`; fuera de React, con `strings()`. Un test verifica que los dos idiomas tengan las mismas claves. Los permisos de iOS se traducen en `locales/*.json`.
+
 ## Calidad
 
 ```bash

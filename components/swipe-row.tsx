@@ -2,6 +2,8 @@ import { useMemo, type ComponentType, type ReactNode } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
+  ArchiveBoxArrowDownIcon,
+  ArchiveBoxXMarkIcon,
   MapPinIcon,
   PencilSquareIcon,
   Square2StackIcon,
@@ -27,6 +29,8 @@ type SwipeRowProps = {
   /** Acción al deslizar hacia la derecha. */
   rightAction: SwipeActionId;
   pinned?: boolean;
+  /** Dentro de las archivadas, «archivar» pasa a ser «desarchivar». */
+  archived?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   onAction: (action: SwipeActionId) => void;
@@ -37,6 +41,7 @@ type ActionIcon = ComponentType<SvgProps & { size?: NumberProp }>;
 
 const ICONS: Record<Exclude<SwipeActionId, 'none'>, ActionIcon> = {
   delete: TrashIcon,
+  archive: ArchiveBoxArrowDownIcon,
   pin: MapPinIcon,
   rename: PencilSquareIcon,
   fork: Square2StackIcon,
@@ -53,6 +58,7 @@ export function SwipeRow({
   leftAction,
   rightAction,
   pinned = false,
+  archived = false,
   disabled = false,
   style,
   onAction,
@@ -97,10 +103,22 @@ export function SwipeRow({
     <View style={[styles.container, style]}>
       {/* Deslizar a la derecha descubre el panel de la izquierda, y viceversa. */}
       {rightAction !== 'none' ? (
-        <ActionPanel action={rightAction} side="start" pinned={pinned} translateX={translateX} />
+        <ActionPanel
+          action={rightAction}
+          side="start"
+          pinned={pinned}
+          archived={archived}
+          translateX={translateX}
+        />
       ) : null}
       {leftAction !== 'none' ? (
-        <ActionPanel action={leftAction} side="end" pinned={pinned} translateX={translateX} />
+        <ActionPanel
+          action={leftAction}
+          side="end"
+          pinned={pinned}
+          archived={archived}
+          translateX={translateX}
+        />
       ) : null}
       <GestureDetector gesture={pan}>
         <Animated.View style={[{ backgroundColor: t.bg }, contentStyle]}>{children}</Animated.View>
@@ -113,16 +131,18 @@ function ActionPanel({
   action,
   side,
   pinned,
+  archived,
   translateX,
 }: {
   action: Exclude<SwipeActionId, 'none'>;
   side: 'start' | 'end';
   pinned: boolean;
+  archived: boolean;
   translateX: SharedValue<number>;
 }) {
   const { theme } = useTheme();
   const t = theme.tokens;
-  const Icon = ICONS[action];
+  const Icon = action === 'archive' && archived ? ArchiveBoxXMarkIcon : ICONS[action];
   const colors =
     action === 'delete'
       ? { bg: '#ef4444', fg: '#ffffff' }
@@ -159,7 +179,7 @@ function ActionPanel({
       <Animated.View style={[styles.panelContent, contentStyle]}>
         <Icon color={colors.fg} size={22} />
         <Text style={[styles.panelLabel, { color: colors.fg }]}>
-          {swipeActionLabel(action, pinned)}
+          {swipeActionLabel(action, pinned, archived)}
         </Text>
       </Animated.View>
     </Animated.View>

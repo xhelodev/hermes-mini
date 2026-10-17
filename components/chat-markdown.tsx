@@ -5,7 +5,9 @@ import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 
 import { StreamCursor } from '@/components/stream-status';
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
+import { strings } from '@/lib/i18n';
 import { codeForCopy, fenceLanguage, parseMarkdown, stableMarkdownLength } from '@/lib/markdown';
 import type { ThemeTokens } from '@/lib/themes';
 
@@ -107,7 +109,7 @@ function readInline(
     if (token.type === 'image') {
       const src = String(token.attrGet('src') ?? '');
       const alt = readInline(token.children ?? [], 0, null, `${keyPrefix}-${i}-alt`, tokensTheme).nodes;
-      const label = alt.length > 0 ? alt : src || 'imagen';
+      const label = alt.length > 0 ? alt : src || strings().chat.imageFallback;
       nodes.push(
         src ? (
           <Text
@@ -157,6 +159,7 @@ function matchingClose(tokens: MarkdownToken[], openIndex: number): number {
 
 function CodeBlock({ code, language, theme }: { code: string; language: string; theme: ThemeTokens }) {
   const [copied, setCopied] = useState(false);
+  const str = useStrings();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(
@@ -178,8 +181,8 @@ function CodeBlock({ code, language, theme }: { code: string; language: string; 
     <View style={[styles.codeBlock, { borderColor: theme.bd, backgroundColor: theme.bg }]}>
       <View style={[styles.codeHeader, { borderBottomColor: theme.bd }]}>
         <Text style={[styles.codeLang, { color: theme.mut }]}>{language}</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="Copiar código" onPress={onCopy}>
-          <Text style={[styles.codeLang, { color: theme.mut }]}>{copied ? 'Copiado' : 'Copiar'}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel={str.chat.copyCode} onPress={onCopy}>
+          <Text style={[styles.codeLang, { color: theme.mut }]}>{copied ? str.chat.copied : str.chat.copy}</Text>
         </Pressable>
       </View>
       <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false}>

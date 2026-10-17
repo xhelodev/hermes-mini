@@ -13,7 +13,7 @@ type StoredList = { baseUrl: string; sessions: HermesSession[] };
 
 const memory = new WeakMap<object, HermesSession[]>();
 
-function isSession(value: unknown): value is HermesSession {
+export function isSession(value: unknown): value is HermesSession {
   if (!value || typeof value !== 'object') return false;
   const item = value as Record<string, unknown>;
   return (

@@ -1,10 +1,11 @@
 import { HermesError } from '@/lib/hermes/errors';
+import { strings } from '@/lib/i18n';
 
 /** Base del API server, sin el sufijo `/v1` que agregan los clientes OpenAI. */
 export function normalizeBaseUrl(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) {
-    throw new HermesError('bad_response', 'Ingresá la URL del servidor.');
+    throw new HermesError('bad_response', strings().errors.urlMissing);
   }
 
   const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
@@ -12,11 +13,11 @@ export function normalizeBaseUrl(input: string): string {
   try {
     url = new URL(withProtocol);
   } catch {
-    throw new HermesError('bad_response', 'La URL no es válida.');
+    throw new HermesError('bad_response', strings().errors.urlInvalid);
   }
 
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new HermesError('bad_response', 'La URL no es válida.');
+    throw new HermesError('bad_response', strings().errors.urlInvalid);
   }
 
   const path = url.pathname.replace(/\/+$/, '').replace(/\/v1$/i, '');

@@ -3,6 +3,7 @@ import { CheckIcon } from 'react-native-heroicons/outline';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
 import { VOICE_LOCALES, type VoiceLocaleId } from '@/lib/voice-locale';
@@ -16,6 +17,7 @@ export function VoiceLocaleSheet({ visible, onClose }: VoiceLocaleSheetProps) {
   const { locale, setLocale } = useVoiceLocale();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   const insets = useSafeAreaInsets();
 
   function choose(id: VoiceLocaleId) {
@@ -26,12 +28,12 @@ export function VoiceLocaleSheet({ visible, onClose }: VoiceLocaleSheetProps) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <Pressable accessibilityLabel="Cerrar" style={styles.dismiss} onPress={onClose} />
+        <Pressable accessibilityLabel={str.common.close} style={styles.dismiss} onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: t.bg, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.handle, { backgroundColor: t.bd }]} />
-          <Text style={[styles.title, { color: t.fg }]}>Idioma de voz</Text>
+          <Text style={[styles.title, { color: t.fg }]}>{str.settings.voiceLanguage}</Text>
           <Text style={[styles.subtitle, { color: t.mut }]}>
-            Se usa al dictar un mensaje con el micrófono.
+            {str.settings.voiceHint}
           </Text>
           <ScrollView>
             {VOICE_LOCALES.map((item) => {

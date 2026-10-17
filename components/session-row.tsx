@@ -44,6 +44,7 @@ export const SessionRow = memo(function SessionRow({
       leftAction={leftAction}
       rightAction={rightAction}
       pinned={session.pinned}
+      archived={session.archived}
       disabled={busy}
       style={[styles.rowFrame, { borderBottomColor: t.bd }]}
       onAction={handleAction}

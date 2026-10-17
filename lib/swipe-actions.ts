@@ -1,12 +1,8 @@
-export const SWIPE_ACTIONS = [
-  { id: 'delete', label: 'Borrar' },
-  { id: 'pin', label: 'Fijar' },
-  { id: 'rename', label: 'Renombrar' },
-  { id: 'fork', label: 'Ramificar' },
-  { id: 'none', label: 'Nada' },
-] as const;
+import { strings } from '@/lib/i18n';
 
-export type SwipeActionId = (typeof SWIPE_ACTIONS)[number]['id'];
+export const SWIPE_ACTIONS = ['delete', 'archive', 'pin', 'rename', 'fork', 'none'] as const;
+
+export type SwipeActionId = (typeof SWIPE_ACTIONS)[number];
 
 export type SwipeDirection = 'left' | 'right';
 
@@ -20,7 +16,7 @@ export const DEFAULT_SWIPE_CONFIG: SwipeConfig = {
 export const SWIPE_CONFIG_STORAGE_KEY = '@hermes/swipe-actions';
 
 function resolveAction(value: unknown, fallback: SwipeActionId): SwipeActionId {
-  return SWIPE_ACTIONS.find((item) => item.id === value)?.id ?? fallback;
+  return SWIPE_ACTIONS.find((id) => id === value) ?? fallback;
 }
 
 export function resolveSwipeConfig(stored: string | null | undefined): SwipeConfig {
@@ -36,7 +32,9 @@ export function resolveSwipeConfig(stored: string | null | undefined): SwipeConf
   }
 }
 
-export function swipeActionLabel(id: SwipeActionId, pinned = false): string {
-  if (id === 'pin') return pinned ? 'Quitar' : 'Fijar';
-  return SWIPE_ACTIONS.find((item) => item.id === id)?.label ?? 'Nada';
+export function swipeActionLabel(id: SwipeActionId, pinned = false, archived = false): string {
+  const labels = strings().swipe.actions;
+  if (id === 'pin' && pinned) return labels.unpin;
+  if (id === 'archive' && archived) return labels.unarchive;
+  return labels[id] ?? labels.none;
 }

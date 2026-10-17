@@ -1,0 +1,8 @@
+{
+  "ios": {
+    "NSCameraUsageDescription": "Hermes Mini uses the camera to attach photos to the chat.",
+    "NSPhotoLibraryUsageDescription": "Hermes Mini uses your photos to attach them to the chat.",
+    "NSMicrophoneUsageDescription": "Hermes Mini uses the microphone to dictate messages.",
+    "NSSpeechRecognitionUsageDescription": "Hermes Mini turns your voice into text to send it to the chat."
+  }
+}

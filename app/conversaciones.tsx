@@ -1,9 +1,11 @@
 import { router, useFocusEffect } from 'expo-router';
-import { CalendarDaysIcon, Cog6ToothIcon, PlusIcon } from 'react-native-heroicons/outline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { CalendarDaysIcon, Cog6ToothIcon, PlusIcon, TrashIcon } from 'react-native-heroicons/outline';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ARCHIVE_ROW_HEIGHT, ArchiveRow } from '@/components/archive-row';
+import { CleanupSheet } from '@/components/cleanup-sheet';
 import { ConnectionDot } from '@/components/connection-dot';
 import { ScreenShell } from '@/components/screen-shell';
 import { SessionActions } from '@/components/session-actions';
@@ -11,8 +13,12 @@ import { SessionRow } from '@/components/session-row';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useHermesClient } from '@/contexts/connection-context';
 import { useSwipeActions } from '@/contexts/swipe-actions-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
+import { archiveSession, unarchiveSession, useArchivedSessions } from '@/lib/archived-sessions';
 import { confirmAction } from '@/lib/confirm';
+import { CLEANUP_AGES, deleteSessions, staleSessions, type CleanupAge } from '@/lib/session-cleanup';
+import { forgetSentImages } from '@/lib/sent-images';
 import { lastMessageIsStale, rememberLastMessage, useSessionActivity } from '@/lib/session-activity';
 import {
   cachedSessions,
@@ -38,6 +44,8 @@ function ConversacionesBody() {
   const client = useHermesClient();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
+  const text = str.sessions;
   const insets = useSafeAreaInsets();
   const [sessions, setSessions] = useState<HermesSession[] | null>(() => cachedSessions(client) ?? null);
   // Solo se guarda lo que vino del servidor (o ya estaba en memoria), nunca el `[]` de un error.
@@ -48,12 +56,22 @@ function ConversacionesBody() {
   const [menu, setMenu] = useState<HermesSession | null>(null);
   const [menuRenaming, setMenuRenaming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const { config: swipe } = useSwipeActions();
   const inFlight = useRef<Promise<void> | null>(null);
   const lastLoadAt = useRef(0);
   const activity = useSessionActivity();
   const visible = useRef<HermesSession[]>([]);
   const fetchingLast = useRef(new Set<string>());
+  const archived = useArchivedSessions(client);
+  const archivedCount = archived?.length ?? 0;
+  const listRef = useRef<FlatList<HermesSession>>(null);
+  const [listHeight, setListHeight] = useState(0);
+  const contentHeight = useRef(0);
+  // Se decide una sola vez si arrancar con la fila escondida.
+  const archiveDecided = useRef(false);
+  const archiveRowShown = useRef(false);
 
   // El `preview` del servidor es el primer mensaje; el último lo pedimos para las filas visibles.
   const fetchLastMessages = useCallback(
@@ -184,12 +202,48 @@ function ConversacionesBody() {
     }
   }
 
+  async function onToggleArchive(source: HermesSession) {
+    setBusy(true);
+    try {
+      if (source.archived) {
+        const next = await unarchiveSession(client, source);
+        if (next) setSessions((current) => [next, ...(current ?? []).filter((item) => item.id !== next.id)]);
+        setNotice(str.archive.unarchived);
+      } else {
+        await archiveSession(client, source);
+        setSessions((current) => (current ?? []).filter((item) => item.id !== source.id));
+        setNotice(str.archive.archived);
+      }
+      setMenu(null);
+      setError(null);
+    } catch (err) {
+      setError(describeHermesError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Estilo Telegram: si al abrir ya hay archivadas, su fila queda arriba de todo pero fuera de
+  // la vista, y aparece al deslizar la lista hacia abajo. Si se archiva la primera con la
+  // pantalla abierta, la fila queda a la vista para que se vea adónde fue.
+  const hideArchive = useCallback(() => {
+    if (archiveDecided.current || archived === null || listHeight === 0) return;
+    if (archived.length === 0) {
+      archiveDecided.current = true;
+      return;
+    }
+    if (!archiveRowShown.current || contentHeight.current < listHeight + ARCHIVE_ROW_HEIGHT) return;
+    archiveDecided.current = true;
+    listRef.current?.scrollToOffset({ offset: ARCHIVE_ROW_HEIGHT, animated: false });
+  }, [archived, listHeight]);
+  useEffect(hideArchive, [hideArchive]);
+
   function onFork(source: HermesSession) {
     const branch = () => {
       void (async () => {
         setBusy(true);
         try {
-          const copy = await client.forkSession(source.id, `${source.title} (copia)`);
+          const copy = await client.forkSession(source.id, text.copyTitle(source.title));
           setMenu(null);
           setError(null);
           router.push({ pathname: '/chat/[id]', params: { id: copy.id } });
@@ -201,9 +255,9 @@ function ConversacionesBody() {
       })();
     };
     confirmAction({
-      title: 'Ramificar conversación',
-      message: 'Ramificar cierra esta conversación en el servidor y abre una copia.',
-      confirmLabel: 'Ramificar',
+      title: text.forkTitle,
+      message: text.forkMessage,
+      confirmLabel: str.swipe.actions.fork,
       onConfirm: branch,
     });
   }
@@ -214,6 +268,7 @@ function ConversacionesBody() {
         setBusy(true);
         try {
           await client.deleteSession(source.id);
+          void forgetSentImages([source.id]);
           setSessions((current) => (current ?? []).filter((item) => item.id !== source.id));
           setMenu((current) => (current?.id === source.id ? null : current));
           setError(null);
@@ -225,9 +280,9 @@ function ConversacionesBody() {
       })();
     };
     confirmAction({
-      title: 'Borrar conversación',
-      message: 'Se elimina del servidor.',
-      confirmLabel: 'Borrar',
+      title: text.deleteTitle,
+      message: str.common.deleteFromServer,
+      confirmLabel: str.common.delete,
       destructive: true,
       onConfirm: remove,
     });
@@ -247,6 +302,9 @@ function ConversacionesBody() {
     switch (action) {
       case 'delete':
         onDelete(session);
+        break;
+      case 'archive':
+        void onToggleArchive(session);
         break;
       case 'pin':
         void onTogglePin(session);
@@ -270,6 +328,55 @@ function ConversacionesBody() {
     [],
   );
 
+  // Fijo mientras la hoja está abierta, para que los números no cambien al mirarla.
+  const [cleanupNow, setCleanupNow] = useState(() => Date.now());
+  const cleanupCounts = useMemo(() => {
+    const running = new Set(activity.running.keys());
+    const counts = {} as Record<CleanupAge, number>;
+    for (const days of CLEANUP_AGES) {
+      counts[days] = staleSessions(sessions ?? [], days, cleanupNow, running).length;
+    }
+    return counts;
+  }, [sessions, activity.running, cleanupNow]);
+
+  function openCleanup() {
+    setCleanupNow(Date.now());
+    setCleanupOpen(true);
+  }
+
+  function onCleanup(days: CleanupAge) {
+    setCleanupOpen(false);
+    const targets = staleSessions(sessions ?? [], days, cleanupNow, new Set(activity.running.keys()));
+    if (targets.length === 0) return;
+    const run = () => {
+      void (async () => {
+        setBusy(true);
+        setNotice(null);
+        setError(null);
+        try {
+          const result = await deleteSessions(
+            client,
+            targets.map((session) => session.id),
+          );
+          void forgetSentImages(result.deleted);
+          const gone = new Set(result.deleted);
+          setSessions((current) => (current ?? []).filter((item) => !gone.has(item.id)));
+          if (result.deleted.length > 0) setNotice(str.cleanup.done(result.deleted.length));
+          if (result.failed > 0) setError(str.cleanup.failed(result.failed));
+        } finally {
+          setBusy(false);
+        }
+      })();
+    };
+    confirmAction({
+      title: str.cleanup.confirmTitle(str.cleanup.olderThan[days] ?? ''),
+      message: str.cleanup.confirmMessage(targets.length),
+      confirmLabel: str.common.delete,
+      destructive: true,
+      onConfirm: run,
+    });
+  }
+
   async function onCreate() {
     setCreating(true);
     try {
@@ -287,13 +394,22 @@ function ConversacionesBody() {
   return (
     <ScreenShell
       scroll={false}
-      title="Conversaciones"
+      title={text.title}
       titleAccessory={<ConnectionDot />}
       headerRight={
         <View style={styles.headerActions}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Tareas programadas"
+            accessibilityLabel={str.cleanup.button}
+            disabled={busy || loading}
+            hitSlop={8}
+            onPress={openCleanup}
+          >
+            <TrashIcon color={t.fg} size={22} />
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={str.jobs.title}
             hitSlop={8}
             onPress={() => router.push('/jobs')}
           >
@@ -301,7 +417,7 @@ function ConversacionesBody() {
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Ajustes"
+            accessibilityLabel={str.settings.title}
             hitSlop={8}
             onPress={() => router.push('/temas')}
           >
@@ -316,16 +432,26 @@ function ConversacionesBody() {
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           data={sessions ?? []}
           keyExtractor={(item) => item.id}
           extraData={activity}
           onViewableItemsChanged={onViewableItemsChanged}
           style={{ flex: 1 }}
+          onLayout={(event) => setListHeight(event.nativeEvent.layout.height)}
+          onContentSizeChange={(_, height) => {
+            contentHeight.current = height;
+            hideArchive();
+          }}
+          // Con pocas conversaciones la lista no tendría scroll para esconder la fila.
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingBottom: insets.bottom + 96,
             flexGrow: 1,
+            minHeight: archivedCount > 0 && listHeight > 0 ? listHeight + ARCHIVE_ROW_HEIGHT : undefined,
           }}
+          snapToOffsets={archivedCount > 0 ? [0, ARCHIVE_ROW_HEIGHT] : undefined}
+          snapToEnd={false}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -336,19 +462,32 @@ function ConversacionesBody() {
             />
           }
           ListHeaderComponent={
-            error ? (
-              <Text style={styles.error}>{error}</Text>
+            archivedCount > 0 || error || notice ? (
+              <>
+                {archivedCount > 0 ? (
+                  <ArchiveRow
+                    count={archivedCount}
+                    onLayout={() => {
+                      archiveRowShown.current = true;
+                      hideArchive();
+                    }}
+                    onPress={() => router.push('/archivadas')}
+                  />
+                ) : null}
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                {notice ? <Text style={[styles.notice, { color: t.mut }]}>{notice}</Text> : null}
+              </>
             ) : null
           }
           ListEmptyComponent={
-            <Text style={[styles.empty, { color: t.mut }]}>Todavía no hay conversaciones.</Text>
+            <Text style={[styles.empty, { color: t.mut }]}>{text.empty}</Text>
           }
           renderItem={({ item }) => {
             const status = activity.running.has(item.id)
-              ? (activity.running.get(item.id) ?? 'Respondiendo…')
+              ? (activity.running.get(item.id) ?? text.responding)
               : null;
             const last = activity.last.get(item.id)?.message;
-            const preview = last ? `${last.role === 'user' ? 'Vos: ' : ''}${last.text}` : item.preview;
+            const preview = last ? `${last.role === 'user' ? text.youPrefix : ''}${last.text}` : item.preview;
             return (
               <SessionRow
                 session={item}
@@ -367,7 +506,7 @@ function ConversacionesBody() {
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Nueva conversación"
+        accessibilityLabel={text.newTitle}
         disabled={creating}
         onPress={() => {
           void onCreate();
@@ -383,6 +522,12 @@ function ConversacionesBody() {
       >
         {creating ? <ActivityIndicator color={t.pfg} /> : <PlusIcon color={t.pfg} size={28} />}
       </Pressable>
+      <CleanupSheet
+        visible={cleanupOpen}
+        counts={cleanupCounts}
+        onChoose={onCleanup}
+        onClose={() => setCleanupOpen(false)}
+      />
       <SessionActions
         session={menu}
         startRenaming={menuRenaming}
@@ -393,6 +538,9 @@ function ConversacionesBody() {
         }}
         onTogglePin={() => {
           if (menu) void onTogglePin(menu);
+        }}
+        onToggleArchive={() => {
+          if (menu) void onToggleArchive(menu);
         }}
         onFork={() => {
           if (menu) onFork(menu);
@@ -409,6 +557,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   error: { paddingVertical: 12, fontSize: 14, color: '#ef4444' },
+  notice: { paddingVertical: 12, fontSize: 14 },
   empty: { paddingVertical: 32 },
   fab: {
     position: 'absolute',

@@ -23,7 +23,8 @@ function parseUserMessage(body) {
 }
 
 export function handleListSessions(_req, res) {
-  const sessions = listSessions();
+  // Como Hermes: las archivadas no se listan, salvo las fijadas.
+  const sessions = listSessions().filter((s) => !s.archived || s.pinned);
   sendJson(res, 200, { object: 'list', data: sessions });
 }
 

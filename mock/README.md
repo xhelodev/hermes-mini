@@ -30,7 +30,7 @@ curl -s -H "Authorization: Bearer $HERMES_MOCK_KEY" http://localhost:8642/v1/mod
 | Model routing | Request `model` is honored only when `provider` is also sent; response includes `runtime: { provider, model, ... }` |
 | Content | Multimodal parts: only `image_url` (`http(s)` or `data:image/*`); `file`, `input_file`, non-image data URLs → `400` `unsupported_content_type` |
 | Limits | JSON bodies > 10 MB → `413`; no upload endpoint; >10 concurrent agent runs → `429` |
-| Sessions | `GET/POST /api/sessions`, `GET/PATCH/DELETE /api/sessions/{id}`, `GET .../messages`, `POST .../chat` and `.../chat/stream` (`assistant.delta`, `run.completed` / `run.failed` / `run.cancelled`) |
+| Sessions | `GET/POST /api/sessions`, `GET/PATCH/DELETE /api/sessions/{id}` (PATCH accepts `title`, `pinned`, `archived`; archived sessions are left out of the list unless pinned), `GET .../messages`, `POST .../chat` and `.../chat/stream` (`assistant.delta`, `run.completed` / `run.failed` / `run.cancelled`) |
 | Runs | `POST /v1/runs` + `Idempotency-Key` (replays with `Idempotency-Replayed: true`), `GET /v1/runs/{id}`, `GET .../events`, `POST .../stop` |
 
 ### Gateway fault injection

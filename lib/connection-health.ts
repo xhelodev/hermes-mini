@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 
 import { describeHermesError, HermesError, type HermesClient } from '@/lib/hermes';
+import { strings } from '@/lib/i18n';
 
 /**
  * Estado de la conexión con Hermes compartido entre pantallas: un solo sondeo periódico
@@ -53,7 +54,7 @@ async function probeOnce(client: HermesClient): Promise<{ latencyMs: number }> {
       client.probe(),
       new Promise<never>((_, reject) => {
         timeout = setTimeout(
-          () => reject(new HermesError('timeout', 'El servidor no respondió a tiempo.')),
+          () => reject(new HermesError('timeout', strings().errors.timedOut)),
           PROBE_TIMEOUT_MS,
         );
       }),

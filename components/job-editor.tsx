@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { useHermesClient } from '@/contexts/connection-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { confirmAction } from '@/lib/confirm';
 import { describeHermesError, HermesError } from '@/lib/hermes';
+import { strings } from '@/lib/i18n';
 
 type JobEditorProps = {
   jobId?: string;
@@ -20,6 +22,8 @@ export function JobEditor({ jobId }: JobEditorProps) {
   const client = useHermesClient();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
+  const text = str.jobs;
   const [name, setName] = useState('');
   const [schedule, setSchedule] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -56,7 +60,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
   async function onSave() {
     if (!name.trim() || !schedule.trim() || !prompt.trim()) {
       setNotice(null);
-      setError('Completá nombre, horario y consigna.');
+      setError(text.incomplete);
       return;
     }
     setSaving(true);
@@ -67,7 +71,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
       if (jobId) {
         const next = await client.patchJob(jobId, input);
         setPaused(next.paused);
-        setNotice('Guardado');
+        setNotice(text.saved);
       } else {
         const created = await client.createJob(input);
         router.replace({ pathname: '/jobs/[id]', params: { id: created.id } });
@@ -99,7 +103,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
     setError(null);
     try {
       await client.runJob(jobId);
-      setNotice('Se pidió correr ahora.');
+      setNotice(text.runRequested);
     } catch (err) {
       setError(jobError(err));
     } finally {
@@ -122,26 +126,26 @@ export function JobEditor({ jobId }: JobEditorProps) {
       })();
     };
     confirmAction({
-      title: 'Borrar tarea',
-      message: 'Se elimina del servidor.',
-      confirmLabel: 'Borrar',
+      title: text.deleteTitle,
+      message: str.common.deleteFromServer,
+      confirmLabel: str.common.delete,
       destructive: true,
       onConfirm: remove,
     });
   }
 
   return (
-    <ScreenShell title={jobId ? name || 'Tarea' : 'Nueva tarea'} onBack={() => router.back()}>
+    <ScreenShell title={jobId ? name || text.job : text.newJob} onBack={() => router.back()}>
       {loading ? <ActivityIndicator color={t.pri} /> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {notice ? <Text style={[styles.saved, { color: t.mut }]}>{notice}</Text> : null}
       {loading ? null : (
         <View>
           <Field
-            label="Nombre"
+            label={text.name}
             value={name}
             onChangeText={setName}
-            placeholder="Resumen de la mañana"
+            placeholder={text.namePlaceholder}
             borderColor={t.bd}
             backgroundColor={t.card}
             textColor={t.fg}
@@ -149,10 +153,10 @@ export function JobEditor({ jobId }: JobEditorProps) {
           />
           <ScheduleField value={schedule} onChange={setSchedule} />
           <Field
-            label="Consigna"
+            label={text.prompt}
             value={prompt}
             onChangeText={setPrompt}
-            placeholder="Qué tiene que hacer el agente"
+            placeholder={text.promptPlaceholder}
             multiline
             borderColor={t.bd}
             backgroundColor={t.card}
@@ -160,7 +164,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
             mutedColor={t.mut}
           />
           <Button
-            label={saving ? 'Guardando…' : jobId ? 'Guardar' : 'Crear tarea'}
+            label={saving ? text.saving : jobId ? text.save : text.create}
             backgroundColor={t.pri}
             textColor={t.pfg}
             disabled={saving || busy}
@@ -171,7 +175,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
           {jobId ? (
             <View style={styles.actions}>
               <Button
-                label={paused ? 'Reanudar' : 'Pausar'}
+                label={paused ? text.resume : text.pause}
                 variant="outline"
                 borderColor={t.bd}
                 textColor={t.fg}
@@ -181,7 +185,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
                 }}
               />
               <Button
-                label="Correr ahora"
+                label={text.runNow}
                 variant="outline"
                 borderColor={t.bd}
                 textColor={t.fg}
@@ -191,7 +195,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
                 }}
               />
               <Button
-                label="Borrar"
+                label={str.common.delete}
                 variant="outline"
                 borderColor={t.bd}
                 textColor={t.fg}
@@ -207,7 +211,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
 }
 
 function jobError(error: unknown): string {
-  if (error instanceof HermesError && error.status === 404) return 'No se encontró esa tarea.';
+  if (error instanceof HermesError && error.status === 404) return strings().jobs.notFound;
   return describeHermesError(error);
 }
 

@@ -2,12 +2,13 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { CameraIcon, PhotoIcon } from 'react-native-heroicons/outline';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { formatElapsed } from '@/lib/format';
 
 const ACTIONS = [
-  { id: 'camera' as const, label: 'Cámara', Icon: CameraIcon },
-  { id: 'gallery' as const, label: 'Galería', Icon: PhotoIcon },
+  { id: 'camera' as const, Icon: CameraIcon },
+  { id: 'gallery' as const, Icon: PhotoIcon },
 ];
 
 export type AttachAction = (typeof ACTIONS)[number]['id'];
@@ -23,11 +24,12 @@ type AttachSheetProps = {
 export function AttachSheet({ recording, holding, elapsed, transcript, onAction }: AttachSheetProps) {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
 
   return (
     <View style={[styles.sheet, { backgroundColor: t.card }]}>
       <View style={[styles.handle, { backgroundColor: t.bd }]} />
-      <Text style={[styles.title, { color: t.fg }]}>{recording ? 'Dictado' : 'Adjuntar'}</Text>
+      <Text style={[styles.title, { color: t.fg }]}>{recording ? str.attach.dictation : str.attach.title}</Text>
       {recording ? null : (
         <View style={styles.grid}>
           {ACTIONS.map((action) => (
@@ -38,17 +40,17 @@ export function AttachSheet({ recording, holding, elapsed, transcript, onAction 
               style={[styles.action, { borderColor: t.bd, backgroundColor: t.bg }]}
             >
               <action.Icon color={t.fg} size={22} />
-              <Text style={{ color: t.fg }}>{action.label}</Text>
+              <Text style={{ color: t.fg }}>{str.attach[action.id]}</Text>
             </Pressable>
           ))}
         </View>
       )}
       {recording ? (
         <View style={[styles.recording, { borderColor: t.bd, backgroundColor: t.bg }]}>
-          <Text style={{ color: t.fg }}>● Dictando · {formatElapsed(elapsed)}</Text>
+          <Text style={{ color: t.fg }}>● {str.attach.dictating} · {formatElapsed(elapsed)}</Text>
           {transcript ? <Text style={{ color: t.fg }}>{transcript}</Text> : null}
           <Text style={[styles.hint, { color: t.mut }]}>
-            {holding ? 'Soltar para enviar' : 'Enviando…'}
+            {holding ? str.attach.releaseToSend : str.attach.sending}
           </Text>
         </View>
       ) : null}

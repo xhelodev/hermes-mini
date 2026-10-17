@@ -5,6 +5,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { imageDataUrl } from '@/lib/format';
 import { PickerError } from '@/lib/pickers';
 import { type StoredImage } from '@/lib/sent-image-index';
+import { strings } from '@/lib/i18n';
 
 const KEY = '@hermes/sent-images';
 const ROOT = 'sent-images';
@@ -89,7 +90,7 @@ async function uploadPreview(uri: string): Promise<string> {
     base64: true,
   });
   if (!preview.base64) {
-    throw new PickerError('No se pudo preparar la imagen para enviarla.');
+    throw new PickerError(strings().attach.prepareFailed);
   }
   return imageDataUrl('image/jpeg', preview.base64);
 }
@@ -114,7 +115,7 @@ export async function saveOutgoingImage(
     };
   } catch (error) {
     if (error instanceof PickerError) throw error;
-    throw new PickerError('No se pudo guardar la foto.');
+    throw new PickerError(strings().attach.saveFailed);
   }
 }
 
@@ -126,4 +127,25 @@ export function discardSentImage(uri: string): void {
   } catch {
     // The chat can drop the chip even if the file stays behind.
   }
+}
+
+/** Borra del teléfono las fotos enviadas en estas conversaciones y su entrada en el índice. */
+export async function forgetSentImages(sessionIds: readonly string[]): Promise<void> {
+  if (sessionIds.length === 0) return;
+  for (const sessionId of sessionIds) {
+    try {
+      const folder = new Directory(Paths.document, ROOT, folderName(sessionId));
+      if (folder.exists) folder.delete();
+    } catch {
+      // Si la carpeta no se puede borrar, al menos que no quede en el índice.
+    }
+  }
+  const index = await readIndex();
+  let changed = false;
+  for (const sessionId of sessionIds) {
+    if (!(sessionId in index)) continue;
+    delete index[sessionId];
+    changed = true;
+  }
+  if (changed) await AsyncStorage.setItem(KEY, JSON.stringify(index)).catch(() => undefined);
 }

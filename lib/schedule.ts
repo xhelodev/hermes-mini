@@ -1,3 +1,5 @@
+import { strings } from '@/lib/i18n';
+
 export type ScheduleMode = 'daily' | 'weekly' | 'hourly' | 'minutes' | 'expression';
 
 export type ScheduleDraft = {
@@ -9,25 +11,12 @@ export type ScheduleDraft = {
   expression: string;
 };
 
-export const WEEKDAYS = [
-  { id: 1, label: 'Lun' },
-  { id: 2, label: 'Mar' },
-  { id: 3, label: 'Mié' },
-  { id: 4, label: 'Jue' },
-  { id: 5, label: 'Vie' },
-  { id: 6, label: 'Sáb' },
-  { id: 0, label: 'Dom' },
-] as const;
+/** Días en el orden del selector (lunes primero), con el número de cron. */
+export const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0] as const;
 
-const WEEKDAY_PHRASE = [
-  'Los domingos',
-  'Los lunes',
-  'Los martes',
-  'Los miércoles',
-  'Los jueves',
-  'Los viernes',
-  'Los sábados',
-];
+export function weekdayShort(day: number): string {
+  return strings().schedule.weekdayShort[day] ?? '';
+}
 
 function emptyDraft(expression = ''): ScheduleDraft {
   return {
@@ -44,9 +33,9 @@ function clock(hour: number, minute: number): string {
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 }
 
-function intervalPhrase(count: number, one: 'hora' | 'minuto'): string {
-  if (count === 1) return one === 'hora' ? 'Cada hora' : 'Cada minuto';
-  return `Cada ${count} ${one === 'hora' ? 'horas' : 'minutos'}`;
+function intervalPhrase(count: number, unit: 'hour' | 'minute'): string {
+  const text = strings().schedule;
+  return unit === 'hour' ? text.everyHours(count) : text.everyMinutes(count);
 }
 
 function bounded(value: string, min: number, max: number): number | null {
@@ -61,7 +50,7 @@ function loosePhrase(expression: string): string | null {
   if (!match) return null;
   const count = Number(match[1]);
   if (!Number.isFinite(count) || count < 1) return null;
-  return intervalPhrase(count, match[2].toLowerCase().startsWith('h') ? 'hora' : 'minuto');
+  return intervalPhrase(count, match[2].toLowerCase().startsWith('h') ? 'hour' : 'minute');
 }
 
 export function phraseSchedule(draft: ScheduleDraft): string | null {
@@ -69,26 +58,27 @@ export function phraseSchedule(draft: ScheduleDraft): string | null {
     const hour = bounded(draft.hour, 0, 23);
     const minute = bounded(draft.minute, 0, 59);
     if (hour == null || minute == null) return null;
-    return `Todos los días a las ${clock(hour, minute)}`;
+    return strings().schedule.daily(clock(hour, minute));
   }
   if (draft.mode === 'weekly') {
     const hour = bounded(draft.hour, 0, 23);
     const minute = bounded(draft.minute, 0, 59);
-    const day = WEEKDAY_PHRASE[draft.weekday];
-    if (hour == null || minute == null || !day) return null;
-    return `${day} a las ${clock(hour, minute)}`;
+    if (hour == null || minute == null) return null;
+    const day = strings().schedule.weekly[draft.weekday];
+    if (!day) return null;
+    return day(clock(hour, minute));
   }
   if (draft.mode === 'hourly') {
     const every = bounded(draft.every, 1, 23);
     const minute = bounded(draft.minute, 0, 59);
     if (every == null || minute == null) return null;
-    const base = intervalPhrase(every, 'hora');
-    return minute === 0 ? base : `${base}, al minuto ${String(minute).padStart(2, '0')}`;
+    const base = intervalPhrase(every, 'hour');
+    return minute === 0 ? base : strings().schedule.atMinute(base, String(minute).padStart(2, '0'));
   }
   if (draft.mode === 'minutes') {
     const every = bounded(draft.every, 1, 59);
     if (every == null) return null;
-    return intervalPhrase(every, 'minuto');
+    return intervalPhrase(every, 'minute');
   }
   const expression = draft.expression.trim();
   if (!expression) return null;
@@ -153,7 +143,7 @@ export function parseSchedule(expression: string): ScheduleDraft {
 
 export function describeSchedule(expression: string): string {
   const trimmed = expression.trim();
-  if (!trimmed) return 'Sin horario';
+  if (!trimmed) return strings().schedule.none;
   return phraseSchedule(parseSchedule(trimmed)) ?? trimmed;
 }
 

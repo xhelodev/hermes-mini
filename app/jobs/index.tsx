@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useHermesClient } from '@/contexts/connection-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { describeHermesError, formatPreview, HermesError, type HermesJob } from '@/lib/hermes';
 import { describeSchedule, scheduleDetail } from '@/lib/schedule';
@@ -23,6 +24,7 @@ function JobsBody() {
   const client = useHermesClient();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const text = useStrings().jobs;
   const insets = useSafeAreaInsets();
   const [jobs, setJobs] = useState<HermesJob[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,13 +42,13 @@ function JobsBody() {
       setJobs((current) => current ?? []);
       setError(
         err instanceof HermesError && err.code === 'unavailable'
-          ? 'Este servidor no tiene tareas programadas.'
+          ? text.unavailable
           : describeHermesError(err),
       );
     } finally {
       setRefreshing(false);
     }
-  }, [client]);
+  }, [client, text]);
 
   useFocusEffect(
     useCallback(() => {
@@ -57,7 +59,7 @@ function JobsBody() {
   const loading = jobs === null && !error;
 
   return (
-    <ScreenShell scroll={false} title="Tareas programadas" onBack={() => router.back()}>
+    <ScreenShell scroll={false} title={text.title} onBack={() => router.back()}>
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={t.pri} />
@@ -83,7 +85,7 @@ function JobsBody() {
           }
           ListHeaderComponent={error ? <Text style={styles.error}>{error}</Text> : null}
           ListEmptyComponent={
-            error ? null : <Text style={[styles.empty, { color: t.mut }]}>Todavía no hay tareas.</Text>
+            error ? null : <Text style={[styles.empty, { color: t.mut }]}>{text.empty}</Text>
           }
           renderItem={({ item }) => {
             const detail = scheduleDetail(item.schedule);
@@ -94,7 +96,7 @@ function JobsBody() {
               >
                 <View style={styles.rowTop}>
                   <Text style={[styles.title, { color: t.fg }]}>{item.name}</Text>
-                  {item.paused ? <Text style={[styles.time, { color: t.mut }]}>Pausada</Text> : null}
+                  {item.paused ? <Text style={[styles.time, { color: t.mut }]}>{text.paused}</Text> : null}
                 </View>
                 <Text style={[styles.preview, { color: t.mut }]}>{describeSchedule(item.schedule)}</Text>
                 {detail ? <Text style={[styles.detail, { color: t.mut }]}>{detail}</Text> : null}
@@ -110,7 +112,7 @@ function JobsBody() {
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Nueva tarea"
+        accessibilityLabel={text.newJob}
         onPress={() => router.push('/jobs/nueva')}
         style={[styles.fab, { backgroundColor: t.pri, bottom: insets.bottom + 24 }]}
       >

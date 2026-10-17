@@ -30,6 +30,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { feedbackMailto, SUPPORT_EMAIL } from '@/lib/support';
 
@@ -60,6 +61,8 @@ type ConnectionHelpSheetProps = {
 export function ConnectionHelpSheet({ visible, onClose }: ConnectionHelpSheetProps) {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
+  const text = str.help;
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   // Desplazamiento del sheet por arrastre o salida. En reposo vale 0 (abierto):
@@ -170,7 +173,7 @@ export function ConnectionHelpSheet({ visible, onClose }: ConnectionHelpSheetPro
       >
         <Animated.View style={[styles.backdrop, backdropStyle]} />
       </Animated.View>
-      <Pressable accessibilityLabel="Cerrar" style={styles.dismiss} onPress={close} />
+      <Pressable accessibilityLabel={str.common.close} style={styles.dismiss} onPress={close} />
       <Animated.View entering={SlideInDown.duration(OPEN_MS)} style={styles.sheetWrap}>
         <GestureDetector gesture={gestures.pan}>
           <Animated.View
@@ -182,7 +185,7 @@ export function ConnectionHelpSheet({ visible, onClose }: ConnectionHelpSheetPro
           >
             <View style={styles.drag}>
               <View style={[styles.handle, { backgroundColor: t.bd }]} />
-              <Text style={[styles.title, { color: t.fg }]}>¿Cómo obtengo la URL y la clave?</Text>
+              <Text style={[styles.title, { color: t.fg }]}>{str.connect.help}</Text>
             </View>
             <GestureDetector gesture={gestures.scroll}>
               <Animated.ScrollView
@@ -193,12 +196,10 @@ export function ConnectionHelpSheet({ visible, onClose }: ConnectionHelpSheetPro
                 onScroll={onScroll}
               >
                 <Text style={[styles.body, { color: t.fg }]}>
-                  Para conectarte necesitás un servidor propio con Hermes Agent y su API habilitada.
-                  Desde ahí obtenés la URL y la clave de la API.
+                  {text.intro}
                 </Text>
                 <Text style={[styles.body, { color: t.fg }]}>
-                  La guía oficial explica paso a paso cómo activar el servidor de API y generar la
-                  clave.
+                  {text.guide}
                 </Text>
                 <Pressable
                   accessibilityRole="link"
@@ -207,7 +208,7 @@ export function ConnectionHelpSheet({ visible, onClose }: ConnectionHelpSheetPro
                 >
                   <BookOpenIcon color={t.pri} size={22} />
                   <View style={styles.cardText}>
-                    <Text style={[styles.linkTitle, { color: t.pri }]}>Documentación oficial</Text>
+                    <Text style={[styles.linkTitle, { color: t.pri }]}>{text.docs}</Text>
                     <Text style={[styles.linkSub, { color: t.mut }]}>
                       hermes-agent.nousresearch.com
                     </Text>
@@ -218,16 +219,14 @@ export function ConnectionHelpSheet({ visible, onClose }: ConnectionHelpSheetPro
                 <View style={styles.headingRow}>
                   <ShieldCheckIcon color={t.fg} size={20} />
                   <Text style={[styles.heading, styles.headingText, { color: t.fg }]}>
-                    Conectate por VPN
+                    {text.vpnTitle}
                   </Text>
                 </View>
                 <Text style={[styles.body, { color: t.fg }]}>
-                  La app es compatible con VPN, y es la forma más segura de usarla: tu servidor no
-                  queda expuesto a internet y solo vos podés llegar a él. Es lo que recomiendo.
+                  {text.vpnBody}
                 </Text>
                 <Text style={[styles.body, { color: t.fg }]}>
-                  Si buscás la opción más fácil, probá Tailscale: se instala en minutos, sin abrir
-                  puertos ni configurar nada complicado.
+                  {text.tailscale}
                 </Text>
                 <Pressable
                   accessibilityRole="link"
@@ -237,17 +236,17 @@ export function ConnectionHelpSheet({ visible, onClose }: ConnectionHelpSheetPro
                   <FontAwesome5 name="google-play" size={20} color={t.pri} />
                   <View style={styles.cardText}>
                     <Text style={[styles.linkTitle, { color: t.pri }]}>
-                      Tailscale en Play Store
+                      {text.tailscaleLink}
                     </Text>
                     <Text style={[styles.linkSub, { color: t.mut }]}>
-                      Instalalo en tu servidor y en este teléfono
+                      {text.tailscaleHint}
                     </Text>
                   </View>
                   <ArrowTopRightOnSquareIcon color={t.mut} size={18} />
                 </Pressable>
 
-                <Text style={[styles.heading, { color: t.fg }]}>¿Dudas o consultas?</Text>
-                <Text style={[styles.body, { color: t.fg }]}>Escribime, con gusto te ayudo.</Text>
+                <Text style={[styles.heading, { color: t.fg }]}>{text.questions}</Text>
+                <Text style={[styles.body, { color: t.fg }]}>{text.contact}</Text>
                 <View style={styles.row}>
                   <Pressable
                     accessibilityRole="link"
