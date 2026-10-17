@@ -84,6 +84,9 @@ export type HermesMessage = {
   steer: boolean;
 };
 
+/** Título exacto del chat permanente de cada Bot (un perfil de Hermes). */
+export const BOT_CHAT_TITLE = 'Bot Chat';
+
 /** Hermes entrega cada corrección envuelta en este marcador; en pantalla va solo el texto. */
 const STEER_MARKER = /^\s*\[OUT-OF-BAND USER MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND USER MESSAGE\]\s*$/;
 

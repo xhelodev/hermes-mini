@@ -29,7 +29,8 @@ type ConnectionContextValue = {
   /** Si el servidor ofrece esa función (`features` de `/v1/capabilities`); sin datos, sí. */
   supports: (feature: string) => boolean;
   defaultModel: ModelSelection | null;
-  modelForSession: (sessionId: string) => ModelSelection | null;
+  /** El modelo elegido para esa conversación; con `useDefault` (por defecto) cae en el general. */
+  modelForSession: (sessionId: string, useDefault?: boolean) => ModelSelection | null;
   saveConnection: (baseUrl: string, apiKey: string, remember: boolean) => Promise<void>;
   clearConnection: () => Promise<void>;
   setDefaultModel: (model: ModelSelection) => void;
@@ -173,7 +174,7 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   const modelForSession = useCallback(
-    (sessionId: string) => sessionModels[sessionId] ?? defaultModel,
+    (sessionId: string, useDefault = true) => sessionModels[sessionId] ?? (useDefault ? defaultModel : null),
     [sessionModels, defaultModel],
   );
 

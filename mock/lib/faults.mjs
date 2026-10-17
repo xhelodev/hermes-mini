@@ -2,7 +2,9 @@ export function getFault(req) {
   const url = new URL(req.url || '/', 'http://localhost');
   const q = url.searchParams.get('fault');
   const header = req.headers['x-mock-fault'] || req.headers['X-Mock-Fault'];
-  return (q || header || '').toString().trim().toLowerCase();
+  // MOCK_FAULT aplica una falla a todos los pedidos (p. ej. `slowstream` en Vercel), porque
+  // desde el teléfono no se pueden mandar headers.
+  return (q || header || process.env.MOCK_FAULT || '').toString().trim().toLowerCase();
 }
 
 export function faultResponse(fault) {

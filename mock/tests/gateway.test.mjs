@@ -232,6 +232,124 @@ describe('Hermes mock gateway', () => {
     });
   });
 
+  describe('/v1/runs bound to a session, like Hermes', () => {
+    const newSession = async () =>
+      (await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} })).json.id;
+    const startRun = async (body, extra) =>
+      (await request(ctx.port, '/v1/runs', { method: 'POST', headers: auth(extra), body })).json.run_id;
+    const frames = (text) =>
+      [...text.matchAll(/^id: (\d+)\ndata: (.+)$/gm)].map((m) => ({ id: Number(m[1]), ...JSON.parse(m[2]) }));
+
+    it('saves the turn in the session and replays numbered events', async () => {
+      const id = await newSession();
+      const runId = await startRun({ input: 'hola', session_id: id });
+      const events = frames((await request(ctx.port, `/v1/runs/${runId}/events`, { headers: auth() })).text);
+      assert.deepEqual(
+        events.map((e) => e.event),
+        ['message.delta', 'run.completed'],
+      );
+      assert.deepEqual(
+        events.map((e) => [e.id, e.seq]),
+        [
+          [0, 0],
+          [1, 1],
+        ],
+      );
+      assert.ok(events[1].output);
+      const resumed = frames(
+        (await request(ctx.port, `/v1/runs/${runId}/events`, { headers: auth({ 'Last-Event-ID': '0' }) })).text,
+      );
+      assert.deepEqual(
+        resumed.map((e) => e.event),
+        ['run.completed'],
+      );
+      const msgs = (await request(ctx.port, `/api/sessions/${id}/messages`, { headers: auth() })).json.data;
+      assert.deepEqual(
+        msgs.map((m) => m.role),
+        ['user', 'assistant'],
+      );
+      const status = (await request(ctx.port, `/v1/runs/${runId}`, { headers: auth() })).json;
+      assert.equal(status.status, 'completed');
+      assert.equal(status.events, undefined);
+    });
+
+    it('keeps running after the events client leaves, and resumes without repeats', async () => {
+      const id = await newSession();
+      const runId = await startRun({ input: 'hola', session_id: id }, { 'X-Mock-Fault': 'slowstream' });
+      // Con `cut` el servidor cierra después del primer evento, sin el evento final.
+      const seen = frames((await request(ctx.port, `/v1/runs/${runId}/events?fault=cut`, { headers: auth() })).text);
+      assert.equal(seen.length, 1);
+      const rest = frames(
+        (await request(ctx.port, `/v1/runs/${runId}/events`, { headers: auth({ 'Last-Event-ID': String(seen[0].seq) }) }))
+          .text,
+      );
+      assert.equal(rest[0].seq, seen[0].seq + 1);
+      assert.equal(rest.at(-1).event, 'run.completed');
+      const status = (await request(ctx.port, `/v1/runs/${runId}`, { headers: auth() })).json;
+      assert.equal(status.status, 'completed');
+    });
+
+    it('stops a slow run, and reports an agent crash as run.failed', async () => {
+      const slow = await startRun({ input: 'hola' }, { 'X-Mock-Fault': 'slowstream' });
+      const stopped = await request(ctx.port, `/v1/runs/${slow}/stop`, { method: 'POST', headers: auth() });
+      assert.equal(stopped.json.status, 'stopping');
+      const events = frames((await request(ctx.port, `/v1/runs/${slow}/events`, { headers: auth() })).text);
+      assert.equal(events.at(-1).event, 'run.cancelled');
+      const crashed = await startRun({ input: 'hola' }, { 'X-Mock-Fault': 'agenterror' });
+      const failed = frames((await request(ctx.port, `/v1/runs/${crashed}/events`, { headers: auth() })).text);
+      assert.equal(failed.at(-1).event, 'run.failed');
+      assert.match(failed.at(-1).error, /agent crashed/);
+    });
+
+    it('answers 404 for an unknown run', async () => {
+      const r = await request(ctx.port, '/v1/runs/run_nope/events', { headers: auth() });
+      assert.equal(r.status, 404);
+    });
+  });
+
+  describe('profiles under /p/<profile>/, like the multiplexed Hermes gateway', () => {
+    it('keeps each profile apart and finds its Bot Chat by exact title', async () => {
+      await request(ctx.port, '/p/researcher/api/sessions', { method: 'POST', headers: auth(), body: { title: 'Bot Chat' } });
+      await request(ctx.port, '/p/researcher/api/sessions', { method: 'POST', headers: auth(), body: { title: 'Otra' } });
+      const found = await request(ctx.port, '/p/researcher/api/sessions?title=Bot%20Chat&include_hidden=1', {
+        headers: auth(),
+      });
+      assert.equal(found.status, 200);
+      assert.deepEqual(
+        found.json.data.map((s) => s.title),
+        ['Bot Chat'],
+      );
+      const main = await request(ctx.port, '/api/sessions?title=Bot%20Chat', { headers: auth() });
+      assert.equal(main.json.data.length, 0);
+      const writer = await request(ctx.port, '/p/writer/api/sessions', { headers: auth() });
+      assert.equal(writer.json.data.length, 0);
+    });
+
+    it("asks for the profile's own key and answers 404 for an unknown profile", async () => {
+      const shared = await request(ctx.port, '/p/privado/api/sessions?limit=1', { headers: auth() });
+      assert.equal(shared.status, 401);
+      const own = await request(ctx.port, '/p/privado/api/sessions?limit=1', {
+        headers: { Authorization: 'Bearer mock-private-key' },
+      });
+      assert.equal(own.status, 200);
+      const unknown = await request(ctx.port, '/p/nadie/api/sessions', { headers: auth() });
+      assert.equal(unknown.status, 404);
+    });
+
+    it('runs a turn in the profile that asked for it', async () => {
+      const bot = (await request(ctx.port, '/p/writer/api/sessions', { method: 'POST', headers: auth(), body: {} })).json.id;
+      const runId = (
+        await request(ctx.port, '/p/writer/v1/runs', { method: 'POST', headers: auth(), body: { input: 'hola', session_id: bot } })
+      ).json.run_id;
+      await request(ctx.port, `/p/writer/v1/runs/${runId}/events`, { headers: auth() });
+      const msgs = await request(ctx.port, `/p/writer/api/sessions/${bot}/messages`, { headers: auth() });
+      assert.deepEqual(
+        msgs.json.data.map((m) => m.role),
+        ['user', 'assistant'],
+      );
+    });
+  });
+
   it('run idempotency replays same run_id', async () => {
     const headers = auth({ 'Idempotency-Key': 'idem-1' });
     const a = await request(ctx.port, '/v1/runs', { method: 'POST', headers, body: { input: 'x' } });

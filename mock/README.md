@@ -26,24 +26,25 @@ curl -s -H "Authorization: Bearer $HERMES_MOCK_KEY" http://localhost:8642/v1/mod
 | Auth | `Authorization: Bearer mock-test-key` on all routes except `GET /health` |
 | Health | `GET /health` → `200` `{"status":"ok"}` (no auth) |
 | Models | `GET /v1/models` → only `hermes-agent`; `GET /api/model/options` → provider/model picker JSON |
+| Profiles (Bots) | Like the multiplexed Hermes gateway, every route also answers under `/p/<profile>/` with that profile's own sessions. `researcher` and `writer` use the server key; `privado` needs `mock-private-key` (`401` with the server key); unknown profiles get `404`. `MOCK_PROFILES=name,name:key,…` replaces the list. `GET /api/sessions?title=` filters by exact title (how a Bot's `Bot Chat` is found) |
 | Capabilities | `GET /v1/capabilities` → same shape as Hermes, listing only what the mock has (no `/model`, `/fork`, skills, toolsets or jobs: `session_model_lock` and `session_fork` are `false`) |
 | Chat | `POST /v1/chat/completions` OpenAI-compatible; `stream: true` → SSE `chat.completion.chunk` then `data: [DONE]`; `: keepalive` every 10s |
 | Model routing | Request `model` is honored only when `provider` is also sent; response includes `runtime: { provider, model, ... }` |
 | Content | Multimodal parts: only `image_url` (`http(s)` or `data:image/*`); `file`, `input_file`, non-image data URLs → `400` `unsupported_content_type` |
 | Limits | JSON bodies > 10 MB → `413`; no upload endpoint; >10 concurrent agent runs → `429` |
 | Sessions | `GET/POST /api/sessions`, `GET/PATCH/DELETE /api/sessions/{id}` (PATCH accepts `title`, `pinned`, `archived`; archived sessions are left out of the list unless pinned), `GET .../messages` (`order=oldest|latest`, anything else → `400` `invalid_pagination`), `POST .../chat` and `.../chat/stream` (`assistant.delta`, `run.completed` / `run.failed` / `run.cancelled`, then `done`) |
-| Runs | `POST /v1/runs` + `Idempotency-Key` (replays with `Idempotency-Replayed: true`), `GET /v1/runs/{id}` (also for session chat turns), `GET .../events`, `POST .../stop`, `POST .../steer` (`409 run_not_accepting_steer` unless the run is still going) |
+| Runs | `POST /v1/runs` + `Idempotency-Key` (replays with `Idempotency-Replayed: true`); with `session_id` the turn is saved in that session. `GET /v1/runs/{id}` (also for session chat turns), `GET .../events` (numbered `id:` frames, `Last-Event-ID` or `?last_seq=` resumes, the run keeps going when the client leaves), `POST .../stop`, `POST .../steer` (`409 run_not_accepting_steer` unless the run is still going). `slowstream` and `agenterror` work on runs too |
 
 ### Gateway fault injection
 
-Query `?fault=` or header `X-Mock-Fault`:
+Query `?fault=` or header `X-Mock-Fault`. The `MOCK_FAULT` environment variable applies a fault to every request that doesn't name one (for example `MOCK_FAULT=slowstream` on Vercel, since the phone can't send headers):
 
 | Value | Effect |
 | --- | --- |
 | `401` | Unauthorized |
 | `down` | `503` |
 | `timeout` | Hang (no response) |
-| `cut` | Abort mid-stream (streaming chat) |
+| `cut` | Abort mid-stream (streaming chat); on `GET /v1/runs/{id}/events`, close after the first event without the final one, to test reconnecting |
 | `agenterror` | Session chat stream sends `error` then `done`, without `run.failed` (agent crash) |
 | `slowstream` | Session chat stream writes a word every 400 ms. Steers sent in the first half are delivered (a `steer` row in the history); later ones come back as `pending_steer` on `run.completed`. Disconnecting stops the run (`cancelled`), like Hermes |
 | `toolarge` | `413` |
