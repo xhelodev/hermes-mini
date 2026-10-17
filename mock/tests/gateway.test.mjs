@@ -307,6 +307,49 @@ describe('Hermes mock gateway', () => {
     });
   });
 
+  describe('profiles under /p/<profile>/, like the multiplexed Hermes gateway', () => {
+    it('keeps each profile apart and finds its Bot Chat by exact title', async () => {
+      await request(ctx.port, '/p/researcher/api/sessions', { method: 'POST', headers: auth(), body: { title: 'Bot Chat' } });
+      await request(ctx.port, '/p/researcher/api/sessions', { method: 'POST', headers: auth(), body: { title: 'Otra' } });
+      const found = await request(ctx.port, '/p/researcher/api/sessions?title=Bot%20Chat&include_hidden=1', {
+        headers: auth(),
+      });
+      assert.equal(found.status, 200);
+      assert.deepEqual(
+        found.json.data.map((s) => s.title),
+        ['Bot Chat'],
+      );
+      const main = await request(ctx.port, '/api/sessions?title=Bot%20Chat', { headers: auth() });
+      assert.equal(main.json.data.length, 0);
+      const writer = await request(ctx.port, '/p/writer/api/sessions', { headers: auth() });
+      assert.equal(writer.json.data.length, 0);
+    });
+
+    it("asks for the profile's own key and answers 404 for an unknown profile", async () => {
+      const shared = await request(ctx.port, '/p/privado/api/sessions?limit=1', { headers: auth() });
+      assert.equal(shared.status, 401);
+      const own = await request(ctx.port, '/p/privado/api/sessions?limit=1', {
+        headers: { Authorization: 'Bearer mock-private-key' },
+      });
+      assert.equal(own.status, 200);
+      const unknown = await request(ctx.port, '/p/nadie/api/sessions', { headers: auth() });
+      assert.equal(unknown.status, 404);
+    });
+
+    it('runs a turn in the profile that asked for it', async () => {
+      const bot = (await request(ctx.port, '/p/writer/api/sessions', { method: 'POST', headers: auth(), body: {} })).json.id;
+      const runId = (
+        await request(ctx.port, '/p/writer/v1/runs', { method: 'POST', headers: auth(), body: { input: 'hola', session_id: bot } })
+      ).json.run_id;
+      await request(ctx.port, `/p/writer/v1/runs/${runId}/events`, { headers: auth() });
+      const msgs = await request(ctx.port, `/p/writer/api/sessions/${bot}/messages`, { headers: auth() });
+      assert.deepEqual(
+        msgs.json.data.map((m) => m.role),
+        ['user', 'assistant'],
+      );
+    });
+  });
+
   it('run idempotency replays same run_id', async () => {
     const headers = auth({ 'Idempotency-Key': 'idem-1' });
     const a = await request(ctx.port, '/v1/runs', { method: 'POST', headers, body: { input: 'x' } });

@@ -26,6 +26,7 @@ curl -s -H "Authorization: Bearer $HERMES_MOCK_KEY" http://localhost:8642/v1/mod
 | Auth | `Authorization: Bearer mock-test-key` on all routes except `GET /health` |
 | Health | `GET /health` → `200` `{"status":"ok"}` (no auth) |
 | Models | `GET /v1/models` → only `hermes-agent`; `GET /api/model/options` → provider/model picker JSON |
+| Profiles (Bots) | Like the multiplexed Hermes gateway, every route also answers under `/p/<profile>/` with that profile's own sessions. `researcher` and `writer` use the server key; `privado` needs `mock-private-key` (`401` with the server key); unknown profiles get `404`. `MOCK_PROFILES=name,name:key,…` replaces the list. `GET /api/sessions?title=` filters by exact title (how a Bot's `Bot Chat` is found) |
 | Capabilities | `GET /v1/capabilities` → same shape as Hermes, listing only what the mock has (no `/model`, `/fork`, skills, toolsets or jobs: `session_model_lock` and `session_fork` are `false`) |
 | Chat | `POST /v1/chat/completions` OpenAI-compatible; `stream: true` → SSE `chat.completion.chunk` then `data: [DONE]`; `: keepalive` every 10s |
 | Model routing | Request `model` is honored only when `provider` is also sent; response includes `runtime: { provider, model, ... }` |

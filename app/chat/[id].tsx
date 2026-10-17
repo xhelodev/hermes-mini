@@ -25,7 +25,8 @@ import type { ReasoningNote } from '@/components/reasoning-fold';
 import { ConnectionDot } from '@/components/connection-dot';
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
-import { RequireConnection, useConnection, useHermesClient } from '@/contexts/connection-context';
+import { BotScope, useBotScope, useScopedClient } from '@/contexts/bots-context';
+import { RequireConnection, useConnection } from '@/contexts/connection-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
@@ -252,9 +253,13 @@ function stringList(value: unknown): string[] {
 }
 
 export default function ChatScreen() {
+  // Con `?bot=` el chat habla con ese Bot (su perfil) en vez del servidor principal.
+  const params = useLocalSearchParams<{ bot?: string }>();
   return (
     <RequireConnection>
-      <ChatBody />
+      <BotScope bot={oneParam(params.bot)}>
+        <ChatBody />
+      </BotScope>
     </RequireConnection>
   );
 }
@@ -262,7 +267,8 @@ export default function ChatScreen() {
 function ChatBody() {
   const params = useLocalSearchParams<{ id: string; title?: string }>();
   const sessionId = oneParam(params.id);
-  const client = useHermesClient();
+  const client = useScopedClient();
+  const bot = useBotScope();
   const [cached] = useState(() => chatCache.get(client, sessionId));
   const { modelForSession, supports } = useConnection();
   const { theme } = useTheme();
@@ -316,7 +322,8 @@ function ChatBody() {
 
   const runningAnywhere = useSessionRunning(sessionId);
   const backgroundRun = runningAnywhere && !sending;
-  const model = modelForSession(sessionId);
+  // Un Bot tiene su propio modelo: el general de la app no lo pisa, solo el elegido en este chat.
+  const model = modelForSession(sessionId, !bot);
   const canSend = draft.trim().length > 0 || pending.length > 0;
   // Solo texto, con el turno en marcha y sin una aprobación pendiente (Hermes no acepta
   // correcciones mientras espera tu decisión).
@@ -923,7 +930,8 @@ function ChatBody() {
   return (
     <ScreenShell
       scroll={false}
-      title={title}
+      // El chat de un Bot se llama "Bot Chat": mostramos el nombre del Bot.
+      title={bot ?? title}
       titleAccessory={<ConnectionDot />}
       onBack={() => router.back()}
       headerRight={

@@ -14,11 +14,22 @@ import {
 } from './handlers-sessions.mjs';
 import { handleCreateRun, handleGetRun, handleRunEvents, handleRunSteer, handleRunStop } from './handlers-runs.mjs';
 import { getRequestPath, openAiError, parseJsonBody, readRawBody, sendJson } from './http.mjs';
+import { profileKey, splitProfile, withProfile } from './profile-scope.mjs';
 import { getModelOptionsOverride, setModelOptionsOverride } from './store.mjs';
 
 const UPLOAD_PATHS = ['/v1/artifacts/upload', '/upload'];
 
 export async function handleRequest(req, res) {
+  const scoped = splitProfile(req.url);
+  if (!scoped) return withProfile('default', () => route(req, res));
+  if (profileKey(scoped.profile) === null) {
+    return sendJson(res, 404, { error: 'Unknown or unconfigured profile' });
+  }
+  req.url = scoped.rest;
+  return withProfile(scoped.profile, () => route(req, res));
+}
+
+async function route(req, res) {
   const { pathname } = getRequestPath(req);
   const method = (req.method || 'GET').toUpperCase();
   const fault = getFault(req);
