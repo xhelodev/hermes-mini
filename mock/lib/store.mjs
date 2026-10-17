@@ -103,8 +103,14 @@ export function createRun(body, idempotencyKey) {
     model: body.model || 'hermes-agent',
     input: body.input || '',
     output: null,
-    events: [],
     created_at: Date.now(),
+    // Transporte de /events, como el _RunStream de Hermes: eventos numerados para retomar con
+    // Last-Event-ID y avisos a quien esté conectado.
+    events: [],
+    nextSeq: 0,
+    terminal: false,
+    subscribers: new Set(),
+    steers: [],
   };
   st.runs.set(runId, run);
   if (idempotencyKey) {
@@ -122,11 +128,24 @@ export function getRun(runId) {
   return getState().runs.get(runId) || null;
 }
 
+/** Agrega un evento al transporte del turno; `null` lo cierra. */
 export function pushRunEvent(runId, event) {
   const run = getRun(runId);
-  if (!run) return null;
-  run.events.push({ ...event, at: Date.now() });
+  if (!run || run.terminal) return null;
+  const seq = run.nextSeq;
+  run.nextSeq += 1;
+  const entry = { seq, event: event && { event: event.event, run_id: runId, timestamp: Date.now() / 1000, ...event } };
+  if (event === null) run.terminal = true;
+  run.events.push(entry);
+  for (const notify of run.subscribers) notify(entry);
   return run;
+}
+
+const RUN_INTERNAL_KEYS = new Set(['events', 'nextSeq', 'terminal', 'subscribers', 'steers', 'input', 'cancelRequested']);
+
+/** Lo que devuelve GET /v1/runs/{id}: el estado, sin el transporte. */
+export function runStatus(run) {
+  return Object.fromEntries(Object.entries(run).filter(([key]) => !RUN_INTERNAL_KEYS.has(key)));
 }
 
 export function completeRun(runId, status, extra = {}) {

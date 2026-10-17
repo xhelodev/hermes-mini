@@ -38,6 +38,7 @@ import {
   HermesError,
   messageText,
   sseEventName,
+  type StreamHooks,
   type ChatContentPart,
   type ChatInput,
   type HermesMessage,
@@ -569,8 +570,12 @@ function ChatBody() {
     startRun(sessionId, prose);
     let reply = '';
     let lost = false;
-    // Al minimizar la app el sistema puede cortar el socket; Hermes detiene el turno si lo nota.
+    // Al minimizar la app el sistema puede cortar el socket. Por el stream de sesión Hermes
+    // detiene el turno si lo nota; por /v1/runs el turno sigue y se retoma al volver.
     let backgrounded = false;
+    // Solo texto va por /v1/runs: las imágenes necesitan la normalización del stream de sesión.
+    const viaRuns = imageParts.length === 0 && supports('run_submission') && supports('run_events_sse');
+    let reconnectRun: (() => void) | null = null;
     const watchdog = createStreamWatchdog({
       onSlow: (slow) => {
         if (!alive.current) return;
@@ -587,6 +592,8 @@ function ChatBody() {
     const appState = AppState.addEventListener('change', (next) => {
       if (next === 'active') {
         watchdog.resume();
+        // El socket pudo morir en segundo plano sin aviso: reabrimos desde el último evento.
+        if (backgrounded) reconnectRun?.();
         return;
       }
       backgrounded = true;
@@ -614,30 +621,39 @@ function ChatBody() {
           await rememberSentImage(sessionId, imageFingerprint(file.dataUrl), file.uri);
         }
       }
-      await client.streamChat(
-        sessionId,
-        payload,
-        model ? { providerId: model.providerId, modelId: model.modelId } : null,
-        (event) => {
-          track(event);
-          applyEvent(event, assistantId);
+      const chosen = model ? { providerId: model.providerId, modelId: model.modelId } : null;
+      const onEvent = (event: SseEvent) => {
+        track(event);
+        applyEvent(event, assistantId);
+      };
+      const hooks: StreamHooks = {
+        onUploadProgress: (fraction) => {
+          watchdog.touch();
+          advanceFrom(
+            ['uploading'],
+            fraction < 1 ? { kind: 'uploading', percent: Math.round(fraction * 100) } : { kind: 'waiting' },
+          );
         },
-        abort.signal,
-        {
-          onUploadProgress: (fraction) => {
-            watchdog.touch();
-            advanceFrom(
-              ['uploading'],
-              fraction < 1 ? { kind: 'uploading', percent: Math.round(fraction * 100) } : { kind: 'waiting' },
-            );
-          },
-          onOpen: () => {
-            watchdog.touch();
-            advanceFrom(['uploading', 'waiting'], { kind: 'thinking' });
-          },
-          onData: watchdog.touch,
+        onOpen: () => {
+          watchdog.touch();
+          advanceFrom(['uploading', 'waiting'], { kind: 'thinking' });
         },
-      );
+        onData: watchdog.touch,
+        onReconnectable: (reconnect) => {
+          reconnectRun = reconnect;
+        },
+      };
+      if (viaRuns) {
+        await client.runChat(sessionId, prose, chosen, onEvent, abort.signal, hooks);
+        // Lo guardado trae el razonamiento, las herramientas y las correcciones del turno, que
+        // /v1/runs no manda completos por el stream.
+        if (alive.current) {
+          flushDeltas();
+          await refreshLines();
+        }
+      } else {
+        await client.streamChat(sessionId, payload, chosen, onEvent, abort.signal, hooks);
+      }
     } catch (err) {
       if (!alive.current) return;
       const aborted = abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted');

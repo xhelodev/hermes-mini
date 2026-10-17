@@ -32,18 +32,18 @@ curl -s -H "Authorization: Bearer $HERMES_MOCK_KEY" http://localhost:8642/v1/mod
 | Content | Multimodal parts: only `image_url` (`http(s)` or `data:image/*`); `file`, `input_file`, non-image data URLs → `400` `unsupported_content_type` |
 | Limits | JSON bodies > 10 MB → `413`; no upload endpoint; >10 concurrent agent runs → `429` |
 | Sessions | `GET/POST /api/sessions`, `GET/PATCH/DELETE /api/sessions/{id}` (PATCH accepts `title`, `pinned`, `archived`; archived sessions are left out of the list unless pinned), `GET .../messages` (`order=oldest|latest`, anything else → `400` `invalid_pagination`), `POST .../chat` and `.../chat/stream` (`assistant.delta`, `run.completed` / `run.failed` / `run.cancelled`, then `done`) |
-| Runs | `POST /v1/runs` + `Idempotency-Key` (replays with `Idempotency-Replayed: true`), `GET /v1/runs/{id}` (also for session chat turns), `GET .../events`, `POST .../stop`, `POST .../steer` (`409 run_not_accepting_steer` unless the run is still going) |
+| Runs | `POST /v1/runs` + `Idempotency-Key` (replays with `Idempotency-Replayed: true`); with `session_id` the turn is saved in that session. `GET /v1/runs/{id}` (also for session chat turns), `GET .../events` (numbered `id:` frames, `Last-Event-ID` or `?last_seq=` resumes, the run keeps going when the client leaves), `POST .../stop`, `POST .../steer` (`409 run_not_accepting_steer` unless the run is still going). `slowstream` and `agenterror` work on runs too |
 
 ### Gateway fault injection
 
-Query `?fault=` or header `X-Mock-Fault`:
+Query `?fault=` or header `X-Mock-Fault`. The `MOCK_FAULT` environment variable applies a fault to every request that doesn't name one (for example `MOCK_FAULT=slowstream` on Vercel, since the phone can't send headers):
 
 | Value | Effect |
 | --- | --- |
 | `401` | Unauthorized |
 | `down` | `503` |
 | `timeout` | Hang (no response) |
-| `cut` | Abort mid-stream (streaming chat) |
+| `cut` | Abort mid-stream (streaming chat); on `GET /v1/runs/{id}/events`, close after the first event without the final one, to test reconnecting |
 | `agenterror` | Session chat stream sends `error` then `done`, without `run.failed` (agent crash) |
 | `slowstream` | Session chat stream writes a word every 400 ms. Steers sent in the first half are delivered (a `steer` row in the history); later ones come back as `pending_steer` on `run.completed`. Disconnecting stops the run (`cancelled`), like Hermes |
 | `toolarge` | `413` |
