@@ -83,6 +83,38 @@ export function elapsedLabel(ms: number): string | null {
   return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')} s`;
 }
 
+/** Qué hacer cuando el stream termina por error, según por qué se cortó. */
+export type StreamStop = {
+  /** Mensaje de error a mostrar; `null` si no hay nada que avisar como fallo. */
+  message: string | null;
+  /** La respuesta sigue corriendo en el servidor: conviene recargar para traer el resultado. */
+  recover: boolean;
+};
+
+/**
+ * Decide cómo cerrar un turno que lanzó. El orden importa: un corte por reloj (`lost`) o una
+ * cancelación del usuario (`aborted`) mandan sobre el hecho de haber minimizado la app, porque
+ * en esos dos casos no tiene sentido recuperar nada.
+ */
+export function stopReason(opts: {
+  /** El vigía dio la conexión por perdida (el servidor dejó de mandar). */
+  lost: boolean;
+  /** El usuario canceló el turno. */
+  aborted: boolean;
+  /** La app pasó a segundo plano durante el turno: el sistema pudo cortar el socket. */
+  backgrounded: boolean;
+  /** Texto para un error común, solo se evalúa si hace falta. */
+  describe: () => string;
+}): StreamStop {
+  if (opts.lost) {
+    return { message: 'Se perdió la conexión: el servidor dejó de responder.', recover: false };
+  }
+  if (opts.aborted) return { message: null, recover: false };
+  // Minimizar la app corta el socket, pero el servidor sigue con el turno: no es un fallo.
+  if (opts.backgrounded) return { message: null, recover: true };
+  return { message: opts.describe(), recover: false };
+}
+
 export type StreamWatchdog = {
   /** Llegaron datos del servidor. */
   touch: () => void;

@@ -5,6 +5,7 @@ import {
   phaseAfterEvent,
   phaseLabel,
   statusLabel,
+  stopReason,
 } from '@/lib/stream-progress';
 
 describe('etapas de una respuesta', () => {
@@ -41,6 +42,38 @@ describe('etapas de una respuesta', () => {
     expect(elapsedLabel(4999)).toBeNull();
     expect(elapsedLabel(12_400)).toBe('12 s');
     expect(elapsedLabel(65_000)).toBe('1 min 05 s');
+  });
+});
+
+describe('cierre de un turno que falló', () => {
+  const describe_ = () => 'No se pudo conectar con el servidor.';
+
+  it('da la conexión por perdida cuando el vigía la corta', () => {
+    expect(stopReason({ lost: true, aborted: false, backgrounded: true, describe: describe_ })).toEqual({
+      message: 'Se perdió la conexión: el servidor dejó de responder.',
+      recover: false,
+    });
+  });
+
+  it('no avisa nada si el usuario canceló', () => {
+    expect(stopReason({ lost: false, aborted: true, backgrounded: true, describe: describe_ })).toEqual({
+      message: null,
+      recover: false,
+    });
+  });
+
+  it('recupera el turno, sin error, si se minimizó la app', () => {
+    expect(stopReason({ lost: false, aborted: false, backgrounded: true, describe: describe_ })).toEqual({
+      message: null,
+      recover: true,
+    });
+  });
+
+  it('muestra el error común en cualquier otro corte', () => {
+    expect(stopReason({ lost: false, aborted: false, backgrounded: false, describe: describe_ })).toEqual({
+      message: 'No se pudo conectar con el servidor.',
+      recover: false,
+    });
   });
 });
 
