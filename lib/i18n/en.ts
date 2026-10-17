@@ -194,6 +194,7 @@ export const en: Messages = {
     forkTitle: 'Fork conversation',
     forkMessage: 'Forking closes this conversation on the server and opens a copy.',
     deleteTitle: 'Delete conversation',
+    deleteMessage: "It's only removed from the app. Hermes still keeps it.",
     empty: 'No conversations yet.',
     responding: 'Responding…',
     youPrefix: 'You: ',
@@ -326,15 +327,17 @@ export const en: Messages = {
     confirmTitle: (label) => `Delete conversations: ${label.toLowerCase()}`,
     confirmMessage: (count) =>
       count === 1
-        ? '1 conversation will be removed from the server. This cannot be undone.'
-        : `${count} conversations will be removed from the server. This cannot be undone.`,
+        ? '1 conversation will be removed from the app. Hermes still keeps it.'
+        : `${count} conversations will be removed from the app. Hermes still keeps them.`,
     deleteAll: 'Delete all conversations',
     deleteAllMessage:
-      'All conversations will be removed from the server, including pinned ones. Archived ones and ones still responding are kept. This cannot be undone.',
+      'All conversations will be removed from the app, including pinned ones. Hermes still keeps them. Archived ones and ones still responding are kept.',
     deleteAllConfirm: 'Delete all',
     deleting: 'Deleting…',
     done: (count) => (count === 1 ? 'Deleted 1 conversation.' : `Deleted ${count} conversations.`),
-    failed: (count) =>
-      count === 1 ? "Couldn't delete 1 conversation." : `Couldn't delete ${count} conversations.`,
+    restore: 'Restore deleted conversations',
+    restoreMessage: "Conversations you deleted from the app come back to the list. Hermes kept them, so nothing was lost.",
+    restoreConfirm: 'Restore',
+    restored: (count) => (count === 1 ? 'Restored 1 conversation.' : `Restored ${count} conversations.`),
   },
 };

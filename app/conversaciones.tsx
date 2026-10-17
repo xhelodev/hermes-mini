@@ -17,8 +17,8 @@ import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { archiveSession, unarchiveSession, useArchivedSessions } from '@/lib/archived-sessions';
 import { confirmAction } from '@/lib/confirm';
-import { CLEANUP_AGES, deleteSessions, staleSessions, type CleanupAge } from '@/lib/session-cleanup';
-import { forgetSentImages } from '@/lib/sent-images';
+import { hideSessions, useHiddenSessions, withoutHidden } from '@/lib/hidden-sessions';
+import { CLEANUP_AGES, staleSessions, type CleanupAge } from '@/lib/session-cleanup';
 import { lastMessageIsStale, rememberLastMessage, useSessionActivity } from '@/lib/session-activity';
 import {
   cachedSessions,
@@ -66,6 +66,12 @@ function ConversacionesBody() {
   const fetchingLast = useRef(new Set<string>());
   const archived = useArchivedSessions(client);
   const archivedCount = archived?.length ?? 0;
+  // Las borradas desde la app siguen llegando del servidor; acá se dejan afuera.
+  const hidden = useHiddenSessions(client);
+  const shown = useMemo(
+    () => (sessions && hidden ? withoutHidden(sessions, hidden) : null),
+    [sessions, hidden],
+  );
   const listRef = useRef<FlatList<HermesSession>>(null);
   const [listHeight, setListHeight] = useState(0);
   const contentHeight = useRef(0);
@@ -264,24 +270,12 @@ function ConversacionesBody() {
 
   function onDelete(source: HermesSession) {
     const remove = () => {
-      void (async () => {
-        setBusy(true);
-        try {
-          await client.deleteSession(source.id);
-          void forgetSentImages([source.id]);
-          setSessions((current) => (current ?? []).filter((item) => item.id !== source.id));
-          setMenu((current) => (current?.id === source.id ? null : current));
-          setError(null);
-        } catch (err) {
-          setError(describeHermesError(err));
-        } finally {
-          setBusy(false);
-        }
-      })();
+      setMenu((current) => (current?.id === source.id ? null : current));
+      void hideSessions(client, [source.id]);
     };
     confirmAction({
       title: text.deleteTitle,
-      message: str.common.deleteFromServer,
+      message: text.deleteMessage,
       confirmLabel: str.common.delete,
       destructive: true,
       onConfirm: remove,
@@ -334,10 +328,10 @@ function ConversacionesBody() {
     const running = new Set(activity.running.keys());
     const counts = {} as Record<CleanupAge, number>;
     for (const days of CLEANUP_AGES) {
-      counts[days] = staleSessions(sessions ?? [], days, cleanupNow, running).length;
+      counts[days] = staleSessions(shown ?? [], days, cleanupNow, running).length;
     }
     return counts;
-  }, [sessions, activity.running, cleanupNow]);
+  }, [shown, activity.running, cleanupNow]);
 
   function openCleanup() {
     setCleanupNow(Date.now());
@@ -346,26 +340,16 @@ function ConversacionesBody() {
 
   function onCleanup(days: CleanupAge) {
     setCleanupOpen(false);
-    const targets = staleSessions(sessions ?? [], days, cleanupNow, new Set(activity.running.keys()));
+    const targets = staleSessions(shown ?? [], days, cleanupNow, new Set(activity.running.keys()));
     if (targets.length === 0) return;
     const run = () => {
       void (async () => {
-        setBusy(true);
-        setNotice(null);
+        await hideSessions(
+          client,
+          targets.map((session) => session.id),
+        );
         setError(null);
-        try {
-          const result = await deleteSessions(
-            client,
-            targets.map((session) => session.id),
-          );
-          void forgetSentImages(result.deleted);
-          const gone = new Set(result.deleted);
-          setSessions((current) => (current ?? []).filter((item) => !gone.has(item.id)));
-          if (result.deleted.length > 0) setNotice(str.cleanup.done(result.deleted.length));
-          if (result.failed > 0) setError(str.cleanup.failed(result.failed));
-        } finally {
-          setBusy(false);
-        }
+        setNotice(str.cleanup.done(targets.length));
       })();
     };
     confirmAction({
@@ -389,7 +373,7 @@ function ConversacionesBody() {
     }
   }
 
-  const loading = sessions === null && !error;
+  const loading = shown === null && !error;
 
   return (
     <ScreenShell
@@ -433,7 +417,7 @@ function ConversacionesBody() {
       ) : (
         <FlatList
           ref={listRef}
-          data={sessions ?? []}
+          data={shown ?? []}
           keyExtractor={(item) => item.id}
           extraData={activity}
           onViewableItemsChanged={onViewableItemsChanged}
