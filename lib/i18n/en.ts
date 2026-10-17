@@ -241,6 +241,7 @@ export const en: Messages = {
     runFailed: 'The response failed.',
     connectionLost: 'Connection lost: the server stopped responding.',
     recovering: 'The app was minimized; fetching the response from the server…',
+    interrupted: "The response was cut off when the app was minimized, and Hermes didn't finish it.",
     clipboardFile: 'clipboard',
     shareFailed: "Couldn't open the share menu.",
     serverModel: 'Server model',

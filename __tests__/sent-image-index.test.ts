@@ -9,6 +9,7 @@ function message(id: string, url: string | null): HermesMessage {
     reasoning: '',
     toolName: null,
     attachments: [{ kind: 'image', label: 'Imagen', url }],
+    finishReason: null,
   };
 }
 

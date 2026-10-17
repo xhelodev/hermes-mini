@@ -91,7 +91,7 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
     const runtime = resolveRuntime(body || {});
     const text = mockAssistantText(body || {}, runtime);
     const crashed = stream && getFault(req) === 'agenterror';
-    if (!crashed) appendMessage(id, { role: 'assistant', content: text });
+    if (!crashed) appendMessage(id, { role: 'assistant', content: text, finish_reason: 'stop' });
 
     if (stream) {
       initSse(res);

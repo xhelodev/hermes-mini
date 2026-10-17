@@ -8,6 +8,7 @@ import {
   runFailureMessage,
   statusLabel,
   stopReason,
+  turnInterrupted,
 } from '@/lib/stream-progress';
 
 describe('etapas de una respuesta', () => {
@@ -135,5 +136,27 @@ describe('fallo de un turno', () => {
   it('no trata otros eventos como fallo', () => {
     expect(runFailureMessage('run.completed', { error: 'x' })).toBeNull();
     expect(runFailureMessage('done', {})).toBeNull();
+  });
+});
+
+describe('turno cortado al minimizar', () => {
+  const user = { role: 'user', text: 'Contame algo', finishReason: null };
+  const tool = { role: 'tool', text: '{"output": "ok"}', finishReason: null };
+  const step = { role: 'assistant', text: '', finishReason: 'tool_calls' };
+
+  it('lo da por terminado si la respuesta cerró con finish_reason', () => {
+    expect(turnInterrupted([user, step, tool, { role: 'assistant', text: 'Listo.', finishReason: 'stop' }])).toBe(false);
+  });
+
+  it('lo da por cortado si Hermes guardó solo parte de la respuesta', () => {
+    expect(turnInterrupted([user, { role: 'assistant', text: 'La historia empieza en', finishReason: null }])).toBe(true);
+  });
+
+  it('lo da por cortado si nadie respondió, aunque haya pasos con herramientas', () => {
+    expect(turnInterrupted([user, step, tool, { role: 'assistant', text: '', finishReason: null }])).toBe(true);
+  });
+
+  it('no avisa nada en una conversación vacía', () => {
+    expect(turnInterrupted([])).toBe(false);
   });
 });

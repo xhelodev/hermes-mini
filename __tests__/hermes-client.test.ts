@@ -94,6 +94,16 @@ describe('mapeo de sesiones', () => {
     expect(messages[0]?.attachments).toEqual([{ kind: 'image', label: 'Imagen', url: 'x' }]);
   });
 
+  it('lee si la respuesta terminó', () => {
+    const messages = mapMessages({
+      data: [
+        { id: 'a1', role: 'assistant', content: 'Completa.', finish_reason: 'stop' },
+        { id: 'a2', role: 'assistant', content: 'Cortada a mit' },
+      ],
+    });
+    expect(messages.map((message) => message.finishReason)).toEqual(['stop', null]);
+  });
+
   it('deja el razonamiento fuera del texto', () => {
     const messages = mapMessages({
       data: [

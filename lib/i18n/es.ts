@@ -241,6 +241,7 @@ export const es = {
     runFailed: 'La respuesta falló.',
     connectionLost: 'Se perdió la conexión: el servidor dejó de responder.',
     recovering: 'La app se minimizó; recuperando la respuesta del servidor…',
+    interrupted: 'La respuesta se cortó al minimizar la app y Hermes no la terminó.',
     clipboardFile: 'portapapeles',
     shareFailed: 'No se pudo abrir el menú para compartir.',
     serverModel: 'Modelo del servidor',

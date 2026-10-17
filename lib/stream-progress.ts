@@ -127,9 +127,27 @@ export function stopReason(opts: {
     return { message: strings().chat.connectionLost, recover: false };
   }
   if (opts.aborted) return { message: null, recover: false };
-  // Minimizar la app corta el socket, pero el servidor sigue con el turno: no es un fallo.
+  // Minimizar la app corta el socket; recargando se ve si el servidor terminó el turno.
   if (opts.backgrounded) return { message: null, recover: true };
   return { message: opts.describe(), recover: false };
+}
+
+/**
+ * Si el último turno quedó sin terminar: nadie le respondió al usuario, o la respuesta no
+ * tiene `finish_reason`. Hermes cancela el turno cuando se cae la conexión y guarda lo que el
+ * agente alcanzó a escribir, así que tener texto no alcanza para darla por completa.
+ */
+export function turnInterrupted(
+  messages: readonly { role: string; text: string; finishReason: string | null }[],
+): boolean {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message) continue;
+    if (message.role === 'user') return true;
+    // Los pasos sin texto (llamadas a herramientas) no dicen nada sobre la respuesta final.
+    if (message.role === 'assistant' && message.text.trim()) return message.finishReason === null;
+  }
+  return false;
 }
 
 export type StreamWatchdog = {

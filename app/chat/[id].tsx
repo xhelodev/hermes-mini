@@ -61,6 +61,7 @@ import {
   runFailureMessage,
   stopReason,
   toolNameOf,
+  turnInterrupted,
   type StreamPhase,
   type StreamStatus,
   type StreamWatchdog,
@@ -130,6 +131,19 @@ function toolNote(message: HermesMessage): ReasoningNote {
     text: name,
     preview: body && body !== name ? body : undefined,
   };
+}
+
+/** Corre `run` ya si la app está al frente, o cuando vuelva a estarlo. */
+function whenActive(run: () => void) {
+  if (AppState.currentState === 'active') {
+    run();
+    return;
+  }
+  const subscription = AppState.addEventListener('change', (next) => {
+    if (next !== 'active') return;
+    subscription.remove();
+    run();
+  });
 }
 
 function linesFromMessages(messages: HermesMessage[]): ChatLine[] {
@@ -323,6 +337,8 @@ function ChatBody() {
 
   const [reloadKey, setReloadKey] = useState(0);
   const hadBackgroundRun = useRef(false);
+  // Turno cortado al minimizar que la próxima recarga tiene que resolver (texto para reintentar).
+  const recoveringRef = useRef<{ text: string } | null>(null);
 
   // Si la respuesta empezó en una visita anterior a este chat, al terminar recargamos.
   useEffect(() => {
@@ -355,9 +371,24 @@ function ChatBody() {
         setSynced(true);
         rememberLastMessage(sessionId, lastMessageOf(messages), session.updatedAt);
         setError(null);
+        const recovered = recoveringRef.current;
+        if (recovered) {
+          recoveringRef.current = null;
+          setNotice(null);
+          if (turnInterrupted(messages)) {
+            const message = strings().chat.interrupted;
+            setError(message);
+            setRetry(recovered.text ? { error: message, text: recovered.text } : null);
+          }
+        }
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(describeHermesError(err));
+        if (cancelled) return;
+        if (recoveringRef.current) {
+          recoveringRef.current = null;
+          setNotice(null);
+        }
+        setError(describeHermesError(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -623,9 +654,13 @@ function ChatBody() {
       const aborted = abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted');
       const stop = stopReason({ lost, aborted, backgrounded, describe: () => describeHermesError(err) });
       if (stop.recover) {
-        // El turno sigue en el servidor: avisamos y recargamos para traer la respuesta final.
+        // Recargamos para ver cómo terminó el turno, pero con la app al frente: en segundo
+        // plano Android le corta la red y la recarga fallaría.
+        recoveringRef.current = { text: prose };
         setNotice(str.chat.recovering);
-        setReloadKey((key) => key + 1);
+        whenActive(() => {
+          if (alive.current) setReloadKey((key) => key + 1);
+        });
       } else if (stop.message) {
         setError(stop.message);
         setRetry(prose ? { error: stop.message, text: prose } : null);

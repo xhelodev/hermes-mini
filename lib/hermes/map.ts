@@ -53,6 +53,8 @@ export type HermesMessage = {
   reasoning: string;
   toolName: string | null;
   attachments: HermesAttachment[];
+  /** `stop` si la respuesta terminó; Hermes lo deja vacío si el turno se cortó a mitad. */
+  finishReason: string | null;
 };
 
 export type ModelSelection = {
@@ -299,6 +301,7 @@ export function mapMessages(payload: unknown): HermesMessage[] {
         reasoning: messageReasoning(record.content, record),
         toolName: stringField(record, 'tool_name') || stringField(record, 'tool'),
         attachments: messageAttachments(record.content),
+        finishReason: stringField(record, 'finish_reason') || null,
       },
     ];
   });
