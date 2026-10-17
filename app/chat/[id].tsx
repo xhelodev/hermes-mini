@@ -65,6 +65,7 @@ import {
   type StreamStatus,
   type StreamWatchdog,
 } from '@/lib/stream-progress';
+import { recoveryError, settleRun } from '@/lib/run-recovery';
 import { applyStoredImages, imageFingerprint } from '@/lib/sent-image-index';
 import { discardSentImage, loadSentImages, rememberSentImage, saveOutgoingImage } from '@/lib/sent-images';
 
@@ -549,7 +550,7 @@ function ChatBody() {
     startRun(sessionId, prose);
     let reply = '';
     let lost = false;
-    // Al minimizar la app el sistema puede cortar el socket aunque el servidor siga con el turno.
+    // Al minimizar la app el sistema puede cortar el socket; Hermes detiene el turno si lo nota.
     let backgrounded = false;
     const watchdog = createStreamWatchdog({
       onSlow: (slow) => {
@@ -623,9 +624,21 @@ function ChatBody() {
       const aborted = abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted');
       const stop = stopReason({ lost, aborted, backgrounded, describe: () => describeHermesError(err) });
       if (stop.recover) {
-        // El turno sigue en el servidor: avisamos y recargamos para traer la respuesta final.
+        // El stream se cortó con la app minimizada: preguntamos en qué quedó el turno.
         setNotice(str.chat.recovering);
-        setReloadKey((key) => key + 1);
+        enterPhase(null);
+        const outcome = await settleRun((runId) => client.getRun(runId), runIdRef.current, {
+          keepWaiting: () => alive.current && !abort.signal.aborted,
+        });
+        if (!alive.current) return;
+        await refreshLines();
+        setNotice(null);
+        // Si lo detuvo el usuario mientras esperábamos, no es un error.
+        const message = abort.signal.aborted ? null : recoveryError(outcome);
+        if (message) {
+          setError(message);
+          setRetry(prose ? { error: message, text: prose } : null);
+        }
       } else if (stop.message) {
         setError(stop.message);
         setRetry(prose ? { error: stop.message, text: prose } : null);
@@ -645,6 +658,21 @@ function ChatBody() {
           return line.notes.some((note) => note.text.trim() || Boolean(note.preview?.trim()));
         }),
       );
+    }
+  }
+
+  /** Trae los mensajes guardados sin perder los que siguen en la cola de envío. */
+  async function refreshLines() {
+    try {
+      const [messages, stored] = await Promise.all([client.getMessages(sessionId), loadSentImages(sessionId)]);
+      if (!alive.current) return;
+      const queued = new Set(queueRef.current.map((item) => item.userLineId));
+      setLines((current) => [
+        ...linesFromMessages(applyStoredImages(messages, stored)),
+        ...current.filter((line) => queued.has(line.id)),
+      ]);
+    } catch {
+      setReloadKey((key) => key + 1);
     }
   }
 

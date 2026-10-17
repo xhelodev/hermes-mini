@@ -117,6 +117,26 @@ describe('Hermes mock gateway', () => {
     assert.deepEqual(await events({ 'X-Mock-Fault': 'agenterror' }), ['error', 'done']);
   });
 
+  it('session chat runs can be polled on /v1/runs/{id}, like Hermes', async () => {
+    const created = await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} });
+    const id = created.json.id;
+    const runOf = async (extra) => {
+      const r = await request(ctx.port, `/api/sessions/${id}/chat/stream`, {
+        method: 'POST',
+        headers: auth(extra),
+        body: { input: 'hello' },
+      });
+      const runId = r.text.match(/"run_id":"([^"]+)"/)[1];
+      return (await request(ctx.port, `/v1/runs/${runId}`, { headers: auth() })).json;
+    };
+    const ok = await runOf();
+    assert.equal(ok.status, 'completed');
+    assert.ok(ok.output);
+    const crashed = await runOf({ 'X-Mock-Fault': 'agenterror' });
+    assert.equal(crashed.status, 'failed');
+    assert.match(crashed.error, /agent crashed/);
+  });
+
   it('archived sessions leave the list until unarchived', async () => {
     const created = await request(ctx.port, '/api/sessions', { method: 'POST', headers: auth(), body: {} });
     const id = created.json.id;

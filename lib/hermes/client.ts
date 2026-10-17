@@ -4,6 +4,7 @@ import {
   mapJobs,
   mapMessages,
   mapModelOptions,
+  mapRun,
   mapSession,
   mapSessions,
   mapSkills,
@@ -11,6 +12,7 @@ import {
   type ChatInput,
   type HermesJob,
   type HermesMessage,
+  type HermesRun,
   type HermesSession,
   type HermesSkill,
   type HermesToolset,
@@ -235,6 +237,12 @@ export class HermesClient {
       method: 'POST',
       body: { provider: model.providerId, model: model.modelId },
     });
+  }
+
+  async getRun(runId: string): Promise<HermesRun> {
+    const run = mapRun(await this.request(`/v1/runs/${encodeURIComponent(runId)}`));
+    if (!run) throw new HermesError('bad_response', strings().errors.missingRun);
+    return run;
   }
 
   async stopRun(runId: string): Promise<void> {

@@ -1,10 +1,11 @@
-import { randomUUID } from 'node:crypto';
 import { getFault } from './faults.mjs';
 import { openAiError, sendJson } from './http.mjs';
 import { mockAssistantText, resolveRuntime } from './runtime.mjs';
 import { initSse, sseWrite, startKeepalive } from './sse.mjs';
 import {
   appendMessage,
+  completeRun,
+  createRun,
   createSession,
   deleteSession,
   getSession,
@@ -85,7 +86,8 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
     return sendJson(res, 429, openAiError('Too many concurrent runs', 'rate_limit_error'));
   }
 
-  const runId = `run_${randomUUID().slice(0, 8)}`;
+  // Como Hermes: el turno queda consultable en GET /v1/runs/{id}.
+  const runId = createRun({ session_id: id, input: parsed.content }).run.run_id;
   try {
     appendMessage(id, { role: 'user', content: parsed.content });
     const runtime = resolveRuntime(body || {});
@@ -98,8 +100,10 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
       const stop = startKeepalive(res);
       if (crashed) {
         // Como Hermes cuando el agente lanza: `error` y `done`, sin `run.failed`.
+        completeRun(runId, 'failed', { error: 'Fault injection: agent crashed' });
         sseWrite(res, { type: 'error', run_id: runId, message: 'Fault injection: agent crashed' }, 'error');
       } else {
+        completeRun(runId, 'completed', { output: text, runtime });
         sseWrite(res, { type: 'assistant.delta', run_id: runId, delta: text }, 'assistant.delta');
         sseWrite(res, { type: 'run.completed', run_id: runId, status: 'completed', runtime }, 'run.completed');
       }
@@ -109,6 +113,7 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
       return;
     }
 
+    completeRun(runId, 'completed', { output: text, runtime });
     sendJson(res, 200, {
       run_id: runId,
       status: 'completed',
@@ -116,6 +121,7 @@ export async function handleSessionChat(req, res, id, body, { stream = false } =
       runtime,
     });
   } catch (e) {
+    completeRun(runId, 'failed', { error: String(e.message) });
     if (stream) {
       initSse(res);
       sseWrite(res, { type: 'run.failed', run_id: runId, error: String(e.message) }, 'run.failed');

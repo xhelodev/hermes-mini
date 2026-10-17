@@ -34,6 +34,20 @@ export type HermesJob = {
   deliver: string;
 };
 
+/** Estado de un turno según `GET /v1/runs/{id}`. Hermes lo guarda una hora después de terminar. */
+export type HermesRun = {
+  id: string;
+  status: string;
+  /** Terminó: `completed`, `failed`, `cancelled` o `interrupted`. */
+  finished: boolean;
+  output: string;
+  error: string;
+  /** Por qué no terminó, por ejemplo `max_iterations_reached(30/30)`. */
+  exitReason: string;
+};
+
+const FINISHED_RUN_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+
 export type HermesAttachment = {
   kind: 'image';
   label: string;
@@ -404,6 +418,23 @@ export function mapJob(raw: unknown): HermesJob | null {
     state,
     paused: state === 'paused' || record.enabled === false,
     deliver: stringField(record, 'deliver') || 'local',
+  };
+}
+
+export function mapRun(payload: unknown): HermesRun | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const id = stringField(record, 'run_id') ?? stringField(record, 'id');
+  const status = stringField(record, 'status');
+  if (!id || !status) return null;
+  const error = asRecord(record.error);
+  return {
+    id,
+    status,
+    finished: FINISHED_RUN_STATUSES.has(status),
+    output: stringField(record, 'output') ?? '',
+    error: stringField(record, 'error') ?? (error ? stringField(error, 'message') : null) ?? '',
+    exitReason: stringField(record, 'turn_exit_reason') ?? '',
   };
 }
 

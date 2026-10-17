@@ -424,6 +424,20 @@ describe('cliente Hermes', () => {
     expect(url.searchParams.get('limit')).toBe('1');
   });
 
+  it('consulta el estado de un turno', async () => {
+    const fetchImpl = jest.fn(async (_input: RequestInfo | URL) =>
+      json(200, { object: 'hermes.run', run_id: 'run_1', status: 'completed', output: 'Listo.' }),
+    );
+    const client = new HermesClient({
+      baseUrl: 'http://127.0.0.1:8642',
+      apiKey: 'mock-test-key',
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const run = await client.getRun('run_1');
+    expect(run).toMatchObject({ id: 'run_1', status: 'completed', finished: true, output: 'Listo.' });
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('http://127.0.0.1:8642/v1/runs/run_1');
+  });
+
   it('fija, ramifica, detiene y aprueba contra el API', async () => {
     const fetchImpl = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

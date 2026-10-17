@@ -55,6 +55,7 @@ export const es = {
     missingSession: 'El servidor no devolvió la conversación.',
     missingCopy: 'El servidor no devolvió la copia.',
     missingJob: 'El servidor no devolvió la tarea.',
+    missingRun: 'El servidor no devolvió el estado de la respuesta.',
     missingNewSession: 'El servidor no devolvió la conversación nueva.',
   },
   attach: {
@@ -241,6 +242,7 @@ export const es = {
     runFailed: 'La respuesta falló.',
     connectionLost: 'Se perdió la conexión: el servidor dejó de responder.',
     recovering: 'La app se minimizó; recuperando la respuesta del servidor…',
+    cutInBackground: 'Se cortó la conexión con la app minimizada y Hermes detuvo la respuesta.',
     clipboardFile: 'portapapeles',
     shareFailed: 'No se pudo abrir el menú para compartir.',
     serverModel: 'Modelo del servidor',
@@ -257,6 +259,17 @@ export const es = {
     tapToClose: 'Tocá para cerrar',
     textCopied: 'Texto copiado.',
     nothingToRetry: 'No hay un mensaje para reintentar.',
+  },
+  turnExit: {
+    maxSteps: 'El agente llegó al límite de pasos sin terminar.',
+    budget: 'Se agotó el presupuesto de este turno.',
+    context: 'La conversación es demasiado larga para el modelo.',
+    noResponse: 'El modelo no respondió.',
+    errors: 'El agente se trabó con errores repetidos.',
+    guardrail: 'Un control de seguridad detuvo la respuesta.',
+    interrupted: 'El servidor interrumpió la respuesta.',
+    notSaved: 'Hermes no pudo guardar la conversación.',
+    other: (code: string) => `La respuesta falló (${code}).`,
   },
   approval: {
     prompt: 'El agente quiere ejecutar un comando.',

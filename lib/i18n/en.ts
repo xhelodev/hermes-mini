@@ -55,6 +55,7 @@ export const en: Messages = {
     missingSession: "The server didn't return the conversation.",
     missingCopy: "The server didn't return the copy.",
     missingJob: "The server didn't return the task.",
+    missingRun: "The server didn't return the response status.",
     missingNewSession: "The server didn't return the new conversation.",
   },
   attach: {
@@ -241,6 +242,7 @@ export const en: Messages = {
     runFailed: 'The response failed.',
     connectionLost: 'Connection lost: the server stopped responding.',
     recovering: 'The app was minimized; fetching the response from the server…',
+    cutInBackground: 'The connection dropped while the app was minimized and Hermes stopped the response.',
     clipboardFile: 'clipboard',
     shareFailed: "Couldn't open the share menu.",
     serverModel: 'Server model',
@@ -257,6 +259,17 @@ export const en: Messages = {
     tapToClose: 'Tap to close',
     textCopied: 'Text copied.',
     nothingToRetry: 'There is no message to retry.',
+  },
+  turnExit: {
+    maxSteps: 'The agent hit its step limit before finishing.',
+    budget: 'This turn ran out of budget.',
+    context: 'The conversation is too long for the model.',
+    noResponse: "The model didn't respond.",
+    errors: 'The agent got stuck on repeated errors.',
+    guardrail: 'A safety check stopped the response.',
+    interrupted: 'The server interrupted the response.',
+    notSaved: "Hermes couldn't save the conversation.",
+    other: (code) => `The response failed (${code}).`,
   },
   approval: {
     prompt: 'The agent wants to run a command.',
