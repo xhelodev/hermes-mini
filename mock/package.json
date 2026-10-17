@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node lib/dev-server.mjs",
-    "test": "node --test tests/**/*.test.mjs"
+    "test": "node --test"
   },
   "dependencies": {
     "busboy": "^1.6.0"
