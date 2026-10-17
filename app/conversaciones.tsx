@@ -1,9 +1,10 @@
 import { router, useFocusEffect } from 'expo-router';
-import { CalendarDaysIcon, Cog6ToothIcon, PlusIcon } from 'react-native-heroicons/outline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { CalendarDaysIcon, Cog6ToothIcon, PlusIcon, TrashIcon } from 'react-native-heroicons/outline';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, View, type ViewToken } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CleanupSheet } from '@/components/cleanup-sheet';
 import { ScreenShell } from '@/components/screen-shell';
 import { SessionActions } from '@/components/session-actions';
 import { SessionRow } from '@/components/session-row';
@@ -13,6 +14,7 @@ import { useSwipeActions } from '@/contexts/swipe-actions-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { confirmAction } from '@/lib/confirm';
+import { CLEANUP_AGES, deleteSessions, staleSessions, type CleanupAge } from '@/lib/session-cleanup';
 import { lastMessageIsStale, rememberLastMessage, useSessionActivity } from '@/lib/session-activity';
 import {
   cachedSessions,
@@ -50,6 +52,8 @@ function ConversacionesBody() {
   const [menu, setMenu] = useState<HermesSession | null>(null);
   const [menuRenaming, setMenuRenaming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const { config: swipe } = useSwipeActions();
   const inFlight = useRef<Promise<void> | null>(null);
   const lastLoadAt = useRef(0);
@@ -272,6 +276,54 @@ function ConversacionesBody() {
     [],
   );
 
+  // Fijo mientras la hoja está abierta, para que los números no cambien al mirarla.
+  const [cleanupNow, setCleanupNow] = useState(() => Date.now());
+  const cleanupCounts = useMemo(() => {
+    const running = new Set(activity.running.keys());
+    const counts = {} as Record<CleanupAge, number>;
+    for (const days of CLEANUP_AGES) {
+      counts[days] = staleSessions(sessions ?? [], days, cleanupNow, running).length;
+    }
+    return counts;
+  }, [sessions, activity.running, cleanupNow]);
+
+  function openCleanup() {
+    setCleanupNow(Date.now());
+    setCleanupOpen(true);
+  }
+
+  function onCleanup(days: CleanupAge) {
+    setCleanupOpen(false);
+    const targets = staleSessions(sessions ?? [], days, cleanupNow, new Set(activity.running.keys()));
+    if (targets.length === 0) return;
+    const run = () => {
+      void (async () => {
+        setBusy(true);
+        setNotice(null);
+        setError(null);
+        try {
+          const result = await deleteSessions(
+            client,
+            targets.map((session) => session.id),
+          );
+          const gone = new Set(result.deleted);
+          setSessions((current) => (current ?? []).filter((item) => !gone.has(item.id)));
+          if (result.deleted.length > 0) setNotice(str.cleanup.done(result.deleted.length));
+          if (result.failed > 0) setError(str.cleanup.failed(result.failed));
+        } finally {
+          setBusy(false);
+        }
+      })();
+    };
+    confirmAction({
+      title: str.cleanup.confirmTitle(str.cleanup.olderThan[days] ?? ''),
+      message: str.cleanup.confirmMessage(targets.length),
+      confirmLabel: str.common.delete,
+      destructive: true,
+      onConfirm: run,
+    });
+  }
+
   async function onCreate() {
     setCreating(true);
     try {
@@ -292,6 +344,15 @@ function ConversacionesBody() {
       title={text.title}
       headerRight={
         <View style={styles.headerActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={str.cleanup.button}
+            disabled={busy || loading}
+            hitSlop={8}
+            onPress={openCleanup}
+          >
+            <TrashIcon color={t.fg} size={22} />
+          </Pressable>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={str.jobs.title}
@@ -337,8 +398,11 @@ function ConversacionesBody() {
             />
           }
           ListHeaderComponent={
-            error ? (
-              <Text style={styles.error}>{error}</Text>
+            error || notice ? (
+              <>
+                {error ? <Text style={styles.error}>{error}</Text> : null}
+                {notice ? <Text style={[styles.notice, { color: t.mut }]}>{notice}</Text> : null}
+              </>
             ) : null
           }
           ListEmptyComponent={
@@ -384,6 +448,12 @@ function ConversacionesBody() {
       >
         {creating ? <ActivityIndicator color={t.pfg} /> : <PlusIcon color={t.pfg} size={28} />}
       </Pressable>
+      <CleanupSheet
+        visible={cleanupOpen}
+        counts={cleanupCounts}
+        onChoose={onCleanup}
+        onClose={() => setCleanupOpen(false)}
+      />
       <SessionActions
         session={menu}
         startRenaming={menuRenaming}
@@ -410,6 +480,7 @@ const styles = StyleSheet.create({
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   error: { paddingVertical: 12, fontSize: 14, color: '#ef4444' },
+  notice: { paddingVertical: 12, fontSize: 14 },
   empty: { paddingVertical: 32 },
   fab: {
     position: 'absolute',

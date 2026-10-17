@@ -294,4 +294,29 @@ export const en: Messages = {
     steps: 'Steps to reproduce it (if it is a bug):',
     platform: 'Platform',
   },
+  cleanup: {
+    button: 'Delete old conversations',
+    title: 'Delete old conversations',
+    subtitle: 'No activity for more than… Pinned conversations and ones still responding are kept.',
+    olderThan: {
+      7: 'Older than 7 days',
+      30: 'Older than 1 month',
+      90: 'Older than 3 months',
+      365: 'Older than 1 year',
+    },
+    count: (count) => (count === 1 ? '1 conversation' : `${count} conversations`),
+    confirmTitle: (label) => `Delete conversations: ${label.toLowerCase()}`,
+    confirmMessage: (count) =>
+      count === 1
+        ? '1 conversation will be removed from the server. This cannot be undone.'
+        : `${count} conversations will be removed from the server. This cannot be undone.`,
+    deleteAll: 'Delete all conversations',
+    deleteAllMessage:
+      'All conversations will be removed from the server, including pinned ones. Ones still responding are kept. This cannot be undone.',
+    deleteAllConfirm: 'Delete all',
+    deleting: 'Deleting…',
+    done: (count) => (count === 1 ? 'Deleted 1 conversation.' : `Deleted ${count} conversations.`),
+    failed: (count) =>
+      count === 1 ? "Couldn't delete 1 conversation." : `Couldn't delete ${count} conversations.`,
+  },
 };

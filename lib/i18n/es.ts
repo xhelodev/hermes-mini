@@ -295,6 +295,34 @@ export const es = {
     steps: 'Pasos para reproducirlo (si es un bug):',
     platform: 'Plataforma',
   },
+  cleanup: {
+    button: 'Borrar conversaciones viejas',
+    title: 'Borrar conversaciones viejas',
+    subtitle: 'Sin actividad desde hace más de… Las fijadas y las que están respondiendo se conservan.',
+    olderThan: {
+      7: 'Más de 7 días',
+      30: 'Más de 1 mes',
+      90: 'Más de 3 meses',
+      365: 'Más de 1 año',
+    } as Record<number, string>,
+    count: (count: number) => (count === 1 ? '1 conversación' : `${count} conversaciones`),
+    confirmTitle: (label: string) => `Borrar conversaciones: ${label.toLowerCase()}`,
+    confirmMessage: (count: number) =>
+      count === 1
+        ? 'Se elimina 1 conversación del servidor. No se puede deshacer.'
+        : `Se eliminan ${count} conversaciones del servidor. No se puede deshacer.`,
+    deleteAll: 'Borrar todas las conversaciones',
+    deleteAllMessage:
+      'Se eliminan todas las conversaciones del servidor, también las fijadas. Las que están respondiendo se conservan. No se puede deshacer.',
+    deleteAllConfirm: 'Borrar todas',
+    deleting: 'Borrando…',
+    done: (count: number) =>
+      count === 1 ? 'Se borró 1 conversación.' : `Se borraron ${count} conversaciones.`,
+    failed: (count: number) =>
+      count === 1
+        ? 'No se pudo borrar 1 conversación.'
+        : `No se pudieron borrar ${count} conversaciones.`,
+  },
 };
 
 type Widen<T> = T extends string
