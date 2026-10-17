@@ -25,9 +25,12 @@ function parseUserMessage(body) {
   return { content: raw };
 }
 
-export function handleListSessions(_req, res) {
-  // Como Hermes: las archivadas no se listan, salvo las fijadas.
-  const sessions = listSessions().filter((s) => !s.archived || s.pinned);
+export function handleListSessions(req, res) {
+  // Como Hermes: las archivadas no se listan, salvo las fijadas; `title` busca por título exacto.
+  const title = new URL(req.url || '/', 'http://mock').searchParams.get('title')?.trim();
+  const sessions = listSessions()
+    .filter((s) => !s.archived || s.pinned)
+    .filter((s) => !title || (s.title || '').trim() === title);
   sendJson(res, 200, { object: 'list', data: sessions });
 }
 

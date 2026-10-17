@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from 'expo-router';
 
 import { JobEditor } from '@/components/job-editor';
+import { BotScope } from '@/contexts/bots-context';
 import { RequireConnection } from '@/contexts/connection-context';
 
 function oneParam(value: string | string[] | undefined): string {
@@ -8,12 +9,14 @@ function oneParam(value: string | string[] | undefined): string {
 }
 
 export default function JobScreen() {
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; bot?: string }>();
   const id = oneParam(params.id);
 
   return (
     <RequireConnection>
-      <JobEditor jobId={id} />
+      <BotScope bot={oneParam(params.bot)}>
+        <JobEditor jobId={id} />
+      </BotScope>
     </RequireConnection>
   );
 }

@@ -1,5 +1,6 @@
 import { HermesError } from '@/lib/hermes/errors';
 import {
+  BOT_CHAT_TITLE,
   mapCapabilities,
   mapJob,
   mapJobs,
@@ -230,6 +231,35 @@ export class HermesClient {
     }
     const suffix = Math.random().toString(36).slice(2, 6);
     return this.insertSession(`${title} ${stamp} ${suffix}`);
+  }
+
+  /** Confirma que la clave sirve para este servidor o perfil: lista una conversación. */
+  async checkAccess(): Promise<void> {
+    await this.request('/api/sessions?limit=1');
+  }
+
+  /**
+   * El chat permanente de un Bot: la conversación titulada exactamente "Bot Chat" de su
+   * perfil, como `hermes peer dm`. Si no existe, la crea.
+   */
+  async openBotChat(): Promise<HermesSession> {
+    const find = async () => {
+      // `include_hidden` solo vale con `title`: la app de escritorio suele ocultar los Bot Chats.
+      const query = new URLSearchParams({ title: BOT_CHAT_TITLE, include_hidden: '1', limit: '200' });
+      const sessions = mapSessions(await this.request(`/api/sessions?${query.toString()}`));
+      return sessions.find((session) => session.title.trim() === BOT_CHAT_TITLE) ?? null;
+    };
+    const existing = await find();
+    if (existing) return existing;
+    try {
+      return await this.insertSession(BOT_CHAT_TITLE);
+    } catch (error) {
+      if (!(error instanceof HermesError && error.status === 400)) throw error;
+      // El título es único: otro cliente lo creó recién, o un Hermes viejo lo tiene oculto.
+      const created = await find();
+      if (created) return created;
+      throw new HermesError('conflict', strings().bots.hiddenChat, 400);
+    }
   }
 
   async getSession(sessionId: string): Promise<HermesSession> {
