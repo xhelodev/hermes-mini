@@ -1,5 +1,5 @@
 import { requireAuth } from './auth.mjs';
-import { MAX_CHAT_BODY_BYTES, DEFAULT_MODEL_OPTIONS, VIRTUAL_MODEL } from './constants.mjs';
+import { MAX_CHAT_BODY_BYTES, DEFAULT_MODEL_OPTIONS, MOCK_CAPABILITIES, VIRTUAL_MODEL } from './constants.mjs';
 import { handleConvert } from './convert.mjs';
 import { faultResponse, getFault, parseCustomModelOptions } from './faults.mjs';
 import { handleChatCompletions } from './handlers-chat.mjs';
@@ -56,6 +56,10 @@ export async function handleRequest(req, res) {
       object: 'list',
       data: [{ id: VIRTUAL_MODEL, object: 'model', owned_by: 'hermes-agent' }],
     });
+  }
+
+  if (method === 'GET' && pathname === '/v1/capabilities') {
+    return sendJson(res, 200, MOCK_CAPABILITIES);
   }
 
   if (method === 'GET' && pathname === '/api/model/options') {

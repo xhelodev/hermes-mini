@@ -263,7 +263,7 @@ function ChatBody() {
   const sessionId = oneParam(params.id);
   const client = useHermesClient();
   const [cached] = useState(() => chatCache.get(client, sessionId));
-  const { modelForSession } = useConnection();
+  const { modelForSession, supports } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
   const str = useStrings();
@@ -320,7 +320,7 @@ function ChatBody() {
   // Solo texto, con el turno en marcha y sin una aprobación pendiente (Hermes no acepta
   // correcciones mientras espera tu decisión).
   const canSteer =
-    sending && liveRunId !== null && status !== null && !approval && !steering && pending.length === 0 && draft.trim().length > 0;
+    supports('run_steer') && sending && liveRunId !== null && status !== null && !approval && !steering && pending.length === 0 && draft.trim().length > 0;
   const { locale: voiceLocale } = useVoiceLocale();
   const dictation = useVoiceDictation({
     locale: voiceLocale,
@@ -646,7 +646,8 @@ function ChatBody() {
         // El stream se cortó con la app minimizada: preguntamos en qué quedó el turno.
         setNotice(str.chat.recovering);
         enterPhase(null);
-        const outcome = await settleRun((runId) => client.getRun(runId), runIdRef.current, {
+        const runId = supports('run_status') ? runIdRef.current : null;
+        const outcome = await settleRun((id) => client.getRun(id), runId, {
           keepWaiting: () => alive.current && !abort.signal.aborted,
         });
         if (!alive.current) return;

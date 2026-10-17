@@ -293,7 +293,10 @@ export const es = {
     key: 'Clave de la API',
     keyPlaceholder: 'tu clave',
     keyMissing: 'Ingresá la clave de la API.',
-    ok: (latencyMs: number) => `Conexión OK · Hermes · ${latencyMs} ms`,
+    ok: (latencyMs: number, profile: string) =>
+      profile ? `Conexión OK · Hermes (${profile}) · ${latencyMs} ms` : `Conexión OK · Hermes · ${latencyMs} ms`,
+    missingApi: (names: string) =>
+      `Este Hermes no tiene el API de conversaciones (falta ${names}). Actualizalo para usar la app.`,
     saveFailed: 'No se pudo guardar la clave en este teléfono.',
     remember: 'Recordar en este teléfono',
     help: '¿Cómo obtengo la URL y la clave?',

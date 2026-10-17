@@ -48,6 +48,19 @@ export type HermesRun = {
 
 const FINISHED_RUN_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 
+/** Lo que anuncia `GET /v1/capabilities`. */
+export type HermesCapabilities = {
+  /** Modelo por defecto del servidor. */
+  model: string;
+  /** Banderas de `features`, por ejemplo `run_steer` o `session_model_lock`. */
+  features: Record<string, boolean>;
+  /** Nombres de la tabla `endpoints`, por ejemplo `sessions` o `session_chat_stream`. */
+  endpoints: string[];
+};
+
+/** Sin esto la app no funciona: son las rutas de las conversaciones y del chat. */
+const CORE_ENDPOINTS = ['sessions', 'session_messages', 'session_chat_stream'];
+
 export type HermesAttachment = {
   kind: 'image';
   label: string;
@@ -448,6 +461,38 @@ export function mapRun(payload: unknown): HermesRun | null {
     error: stringField(record, 'error') ?? (error ? stringField(error, 'message') : null) ?? '',
     exitReason: stringField(record, 'turn_exit_reason') ?? '',
   };
+}
+
+export function mapCapabilities(payload: unknown): HermesCapabilities | null {
+  const record = asRecord(payload);
+  const rawFeatures = asRecord(record?.features);
+  if (!record || !rawFeatures) return null;
+  const features: Record<string, boolean> = {};
+  for (const [name, value] of Object.entries(rawFeatures)) {
+    if (typeof value === 'boolean') features[name] = value;
+    const nested = asRecord(value);
+    if (typeof nested?.supported === 'boolean') features[name] = nested.supported;
+    else if (typeof nested?.enabled === 'boolean') features[name] = nested.enabled;
+  }
+  return {
+    model: stringField(record, 'model') ?? '',
+    features,
+    endpoints: Object.keys(asRecord(record.endpoints) ?? {}),
+  };
+}
+
+/**
+ * Si el servidor ofrece una función. Sin datos (servidor viejo, sin `/v1/capabilities`) o sin
+ * esa bandera se asume que sí, como hacía la app antes de preguntar.
+ */
+export function capabilityFlag(capabilities: HermesCapabilities | null, feature: string): boolean {
+  return capabilities?.features[feature] ?? true;
+}
+
+/** Rutas imprescindibles que el servidor no anuncia; vacío si están todas o no hay datos. */
+export function missingCoreEndpoints(capabilities: HermesCapabilities | null): string[] {
+  if (!capabilities || capabilities.endpoints.length === 0) return [];
+  return CORE_ENDPOINTS.filter((name) => !capabilities.endpoints.includes(name));
 }
 
 export function mapJobs(payload: unknown): HermesJob[] {

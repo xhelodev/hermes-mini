@@ -1,5 +1,6 @@
 import { HermesError } from '@/lib/hermes/errors';
 import {
+  mapCapabilities,
   mapJob,
   mapJobs,
   mapMessages,
@@ -10,6 +11,7 @@ import {
   mapSkills,
   mapToolsets,
   type ChatInput,
+  type HermesCapabilities,
   type HermesJob,
   type HermesMessage,
   type HermesRun,
@@ -120,6 +122,16 @@ export class HermesClient {
       }
     }
     return { latencyMs: Date.now() - started };
+  }
+
+  /** Qué ofrece el servidor; `null` si no tiene `/v1/capabilities` (versiones viejas). */
+  async getCapabilities(): Promise<HermesCapabilities | null> {
+    try {
+      return mapCapabilities(await this.request('/v1/capabilities'));
+    } catch (error) {
+      if (error instanceof HermesError && error.status === 404) return null;
+      throw error;
+    }
   }
 
   async listSessions(): Promise<HermesSession[]> {

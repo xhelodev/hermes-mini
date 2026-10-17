@@ -18,7 +18,7 @@ type ModelSheetProps = {
 
 export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetProps) {
   const client = useHermesClient();
-  const { defaultModel, modelForSession, setDefaultModel, setSessionModel } = useConnection();
+  const { defaultModel, modelForSession, setDefaultModel, setSessionModel, supports } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
   const str = useStrings();
@@ -69,7 +69,8 @@ export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetPro
     setLocking(true);
     setError(null);
     try {
-      await client.lockSessionModel(sessionId, option);
+      // Sin fijación en el servidor, el modelo igual viaja en cada mensaje de esta conversación.
+      if (supports('session_model_lock')) await client.lockSessionModel(sessionId, option);
       setSessionModel(sessionId, option);
       onClose();
     } catch (err) {

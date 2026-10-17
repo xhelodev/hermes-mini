@@ -26,6 +26,7 @@ curl -s -H "Authorization: Bearer $HERMES_MOCK_KEY" http://localhost:8642/v1/mod
 | Auth | `Authorization: Bearer mock-test-key` on all routes except `GET /health` |
 | Health | `GET /health` → `200` `{"status":"ok"}` (no auth) |
 | Models | `GET /v1/models` → only `hermes-agent`; `GET /api/model/options` → provider/model picker JSON |
+| Capabilities | `GET /v1/capabilities` → same shape as Hermes, listing only what the mock has (no `/model`, `/fork`, skills, toolsets or jobs: `session_model_lock` and `session_fork` are `false`) |
 | Chat | `POST /v1/chat/completions` OpenAI-compatible; `stream: true` → SSE `chat.completion.chunk` then `data: [DONE]`; `: keepalive` every 10s |
 | Model routing | Request `model` is honored only when `provider` is also sent; response includes `runtime: { provider, model, ... }` |
 | Content | Multimodal parts: only `image_url` (`http(s)` or `data:image/*`); `file`, `input_file`, non-image data URLs → `400` `unsupported_content_type` |

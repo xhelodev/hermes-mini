@@ -36,6 +36,16 @@ describe('Hermes mock gateway', () => {
     assert.equal(r.json.data[0].id, 'hermes-agent');
   });
 
+  it('GET /v1/capabilities tells what the mock has, like Hermes', async () => {
+    const r = await request(ctx.port, '/v1/capabilities', { headers: auth() });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.object, 'hermes.api_server.capabilities');
+    assert.equal(r.json.features.run_steer, true);
+    assert.equal(r.json.features.session_model_lock, false);
+    assert.ok(r.json.endpoints.session_chat_stream);
+    assert.equal(r.json.endpoints.session_fork, undefined);
+  });
+
   it('GET /api/model/options returns providers', async () => {
     const r = await request(ctx.port, '/api/model/options', { headers: auth() });
     assert.equal(r.status, 200);

@@ -3,7 +3,13 @@ import { Redirect } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { HermesClient, normalizeBaseUrl, type ModelSelection } from '@/lib/hermes';
+import {
+  capabilityFlag,
+  HermesClient,
+  normalizeBaseUrl,
+  type HermesCapabilities,
+  type ModelSelection,
+} from '@/lib/hermes';
 import { deleteSecret, readSecret, writeSecret } from '@/lib/secret-store';
 import { SESSION_LIST_STORAGE_KEY } from '@/lib/session-list-cache';
 
@@ -18,6 +24,10 @@ type ConnectionContextValue = {
   apiKey: string;
   isReady: boolean;
   client: HermesClient | null;
+  /** Lo que anuncia el servidor; `null` mientras no se sepa o si no lo informa. */
+  capabilities: HermesCapabilities | null;
+  /** Si el servidor ofrece esa función (`features` de `/v1/capabilities`); sin datos, sí. */
+  supports: (feature: string) => boolean;
   defaultModel: ModelSelection | null;
   modelForSession: (sessionId: string) => ModelSelection | null;
   saveConnection: (baseUrl: string, apiKey: string, remember: boolean) => Promise<void>;
@@ -104,6 +114,27 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
     }
   }, [baseUrl, apiKey]);
 
+  // Va atada al cliente que la pidió: al cambiar de servidor no se usa la del anterior.
+  const [loaded, setLoaded] = useState<{ client: HermesClient; value: HermesCapabilities | null } | null>(null);
+  const capabilities = loaded && loaded.client === client ? loaded.value : null;
+
+  // Se pregunta una vez por servidor. Si falla, la app sigue como si todo estuviera disponible.
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    client
+      .getCapabilities()
+      .then((value) => {
+        if (!cancelled) setLoaded({ client, value });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+
+  const supports = useCallback((feature: string) => capabilityFlag(capabilities, feature), [capabilities]);
+
   const saveConnection = useCallback(async (nextUrl: string, nextKey: string, remember: boolean) => {
     const normalized = normalizeBaseUrl(nextUrl);
     const key = nextKey.trim();
@@ -153,6 +184,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       apiKey,
       isReady: client !== null,
       client,
+      capabilities,
+      supports,
       defaultModel,
       modelForSession,
       saveConnection,
@@ -165,6 +198,8 @@ export function ConnectionProvider({ children }: { children: React.ReactNode }) 
       baseUrl,
       apiKey,
       client,
+      capabilities,
+      supports,
       defaultModel,
       modelForSession,
       saveConnection,

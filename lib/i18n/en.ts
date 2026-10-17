@@ -293,7 +293,9 @@ export const en: Messages = {
     key: 'API key',
     keyPlaceholder: 'your key',
     keyMissing: 'Enter the API key.',
-    ok: (latencyMs) => `Connection OK · Hermes · ${latencyMs} ms`,
+    ok: (latencyMs, profile) =>
+      profile ? `Connection OK · Hermes (${profile}) · ${latencyMs} ms` : `Connection OK · Hermes · ${latencyMs} ms`,
+    missingApi: (names) => `This Hermes doesn't have the conversations API (missing ${names}). Update it to use the app.`,
     saveFailed: "Couldn't save the key on this phone.",
     remember: 'Remember on this phone',
     help: 'How do I get the URL and the key?',
