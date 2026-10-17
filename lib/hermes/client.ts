@@ -1,31 +1,46 @@
 import { HermesError } from '@/lib/hermes/errors';
 import {
+  BOT_CHAT_TITLE,
+  mapCapabilities,
   mapJob,
   mapJobs,
   mapMessages,
   mapModelOptions,
+  mapRun,
   mapSession,
   mapSessions,
   mapSkills,
   mapToolsets,
   type ChatInput,
+  type HermesCapabilities,
   type HermesJob,
   type HermesMessage,
+  type HermesRun,
   type HermesSession,
   type HermesSkill,
   type HermesToolset,
   type ModelSelection,
 } from '@/lib/hermes/map';
-import { pushSseChunk, type SseEvent } from '@/lib/hermes/sse';
+import { normalizeRunEvent, RUN_TERMINAL_EVENTS, runEventSeq } from '@/lib/hermes/run-events';
+import { pushSseChunk, sseEventName, type SseEvent } from '@/lib/hermes/sse';
 import { joinUrl } from '@/lib/hermes/url';
 import { getLanguage, strings } from '@/lib/i18n';
 
 type RequestOptions = {
   method?: string;
   body?: unknown;
+  headers?: Record<string, string>;
   auth?: boolean;
   timeoutMs?: number;
   signal?: AbortSignal;
+};
+
+/** Un pedido que responde con SSE: el stream de sesión (POST) o los eventos de un turno (GET). */
+type SseRequest = {
+  method: 'GET' | 'POST';
+  path: string;
+  body?: Record<string, unknown>;
+  headers?: Record<string, string>;
 };
 
 type HermesClientOptions = {
@@ -45,7 +60,48 @@ export type StreamHooks = {
   onOpen?: () => void;
   /** Llegaron bytes, incluidos los comentarios `: keepalive`. */
   onData?: () => void;
+  /**
+   * Solo `runChat`: entrega una función que corta la conexión actual y la reabre desde el
+   * último evento, sin cancelar el turno. Sirve al volver de segundo plano, cuando el socket
+   * puede estar muerto sin que el sistema lo haya avisado.
+   */
+  onReconnectable?: (reconnect: () => void) => void;
 };
+
+/** Reintentos del POST de un turno; con la misma `Idempotency-Key` no se duplica. */
+const SUBMIT_RETRIES = 2;
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 10_000;
+/** Si el stream de un turno ya no existe, cada cuánto y hasta cuándo esperar su estado. */
+const STATUS_POLL_MS = 3_000;
+const STATUS_WAIT_MS = 10 * 60_000;
+
+/** Un corte de red o un 5xx: vale la pena reintentar. */
+function retryable(error: unknown): boolean {
+  return error instanceof HermesError && (error.code === 'down' || error.code === 'timeout');
+}
+
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new HermesError('aborted', strings().errors.cancelled));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new HermesError('aborted', strings().errors.cancelled));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function idempotencyKey(): string {
+  return `hm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function isReactNative(): boolean {
   return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
@@ -120,6 +176,16 @@ export class HermesClient {
     return { latencyMs: Date.now() - started };
   }
 
+  /** Qué ofrece el servidor; `null` si no tiene `/v1/capabilities` (versiones viejas). */
+  async getCapabilities(): Promise<HermesCapabilities | null> {
+    try {
+      return mapCapabilities(await this.request('/v1/capabilities'));
+    } catch (error) {
+      if (error instanceof HermesError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   async listSessions(): Promise<HermesSession[]> {
     const collected: HermesSession[] = [];
     const limit = 50;
@@ -165,6 +231,35 @@ export class HermesClient {
     }
     const suffix = Math.random().toString(36).slice(2, 6);
     return this.insertSession(`${title} ${stamp} ${suffix}`);
+  }
+
+  /** Confirma que la clave sirve para este servidor o perfil: lista una conversación. */
+  async checkAccess(): Promise<void> {
+    await this.request('/api/sessions?limit=1');
+  }
+
+  /**
+   * El chat permanente de un Bot: la conversación titulada exactamente "Bot Chat" de su
+   * perfil, como `hermes peer dm`. Si no existe, la crea.
+   */
+  async openBotChat(): Promise<HermesSession> {
+    const find = async () => {
+      // `include_hidden` solo vale con `title`: la app de escritorio suele ocultar los Bot Chats.
+      const query = new URLSearchParams({ title: BOT_CHAT_TITLE, include_hidden: '1', limit: '200' });
+      const sessions = mapSessions(await this.request(`/api/sessions?${query.toString()}`));
+      return sessions.find((session) => session.title.trim() === BOT_CHAT_TITLE) ?? null;
+    };
+    const existing = await find();
+    if (existing) return existing;
+    try {
+      return await this.insertSession(BOT_CHAT_TITLE);
+    } catch (error) {
+      if (!(error instanceof HermesError && error.status === 400)) throw error;
+      // El título es único: otro cliente lo creó recién, o un Hermes viejo lo tiene oculto.
+      const created = await find();
+      if (created) return created;
+      throw new HermesError('conflict', strings().bots.hiddenChat, 400);
+    }
   }
 
   async getSession(sessionId: string): Promise<HermesSession> {
@@ -234,6 +329,20 @@ export class HermesClient {
     await this.request(`/api/sessions/${encodeURIComponent(sessionId)}/model`, {
       method: 'POST',
       body: { provider: model.providerId, model: model.modelId },
+    });
+  }
+
+  async getRun(runId: string): Promise<HermesRun> {
+    const run = mapRun(await this.request(`/v1/runs/${encodeURIComponent(runId)}`));
+    if (!run) throw new HermesError('bad_response', strings().errors.missingRun);
+    return run;
+  }
+
+  /** Le pasa una corrección al turno en curso; el agente la lee al terminar lo que está haciendo. */
+  async steerRun(runId: string, text: string): Promise<void> {
+    await this.request(`/v1/runs/${encodeURIComponent(runId)}/steer`, {
+      method: 'POST',
+      body: { input: text },
     });
   }
 
@@ -320,11 +429,142 @@ export class HermesClient {
       body.model = model.modelId;
     }
     const path = `/api/sessions/${encodeURIComponent(sessionId)}/chat/stream`;
-    if (isReactNative()) {
-      await this.streamWithXhr(path, body, onEvent, signal, hooks);
-      return;
+    await this.openSse({ method: 'POST', path, body }, onEvent, signal, hooks);
+  }
+
+  /**
+   * Un turno por `/v1/runs`. Hermes lo corre aparte de la conexión y guarda el turno en la
+   * conversación, así que si el socket se corta (la app se minimizó, cambió la red) se retoma
+   * desde el último evento recibido. Los eventos llegan traducidos al vocabulario de
+   * `streamChat`. Solo texto: las imágenes siguen por `streamChat`.
+   */
+  async runChat(
+    sessionId: string,
+    text: string,
+    model: Pick<ModelSelection, 'providerId' | 'modelId'> | null,
+    onEvent: (event: SseEvent) => void,
+    signal?: AbortSignal,
+    hooks: StreamHooks = {},
+  ): Promise<void> {
+    const body: Record<string, unknown> = { input: text, session_id: sessionId };
+    if (model?.providerId && model.modelId) {
+      body.provider = model.providerId;
+      body.model = model.modelId;
     }
-    await this.streamWithFetch(path, body, onEvent, signal, hooks);
+    const runId = await this.submitRun(body, signal);
+    hooks.onOpen?.();
+    // Antes del primer evento, para que el chat ya pueda detener o corregir el turno.
+    onEvent({ event: 'run.accepted', data: { run_id: runId } });
+    await this.followRun(runId, onEvent, signal, hooks);
+  }
+
+  private async submitRun(body: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
+    // La misma clave en cada intento: si el primero llegó y se perdió la respuesta, Hermes
+    // devuelve ese turno en vez de empezar otro.
+    const headers = { 'Idempotency-Key': idempotencyKey() };
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const payload = await this.request('/v1/runs', { method: 'POST', body, headers, signal });
+        const runId = asRecord(payload)?.run_id;
+        if (typeof runId !== 'string' || !runId) {
+          throw new HermesError('bad_response', strings().errors.missingRun);
+        }
+        return runId;
+      } catch (error) {
+        if (!retryable(error) || attempt >= SUBMIT_RETRIES) throw error;
+        await wait(RECONNECT_BASE_MS * 2 ** attempt, signal);
+      }
+    }
+  }
+
+  /** Sigue los eventos de un turno hasta el final, reconectando desde el último recibido. */
+  private async followRun(
+    runId: string,
+    onEvent: (event: SseEvent) => void,
+    signal: AbortSignal | undefined,
+    hooks: StreamHooks,
+  ): Promise<void> {
+    const path = `/v1/runs/${encodeURIComponent(runId)}/events`;
+    let lastSeq: number | null = null;
+    let finished = false;
+    let failures = 0;
+    let connection: AbortController | null = null;
+    // Corta la espera entre reintentos cuando se pide reconectar.
+    let nudge: (() => void) | null = null;
+    hooks.onReconnectable?.(() => {
+      connection?.abort();
+      nudge?.();
+    });
+
+    const handle = (event: SseEvent) => {
+      const seq = runEventSeq(event);
+      if (seq !== null) {
+        // Al reconectar, Hermes reenvía desde Last-Event-ID; por las dudas no repetimos.
+        if (lastSeq !== null && seq <= lastSeq) return;
+        lastSeq = seq;
+      }
+      failures = 0;
+      if (RUN_TERMINAL_EVENTS.has(sseEventName(event))) finished = true;
+      normalizeRunEvent(event).forEach(onEvent);
+    };
+
+    while (!finished) {
+      const current = new AbortController();
+      connection = current;
+      const onAbort = () => current.abort();
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) current.abort();
+      const headers: Record<string, string> = lastSeq === null ? {} : { 'Last-Event-ID': String(lastSeq) };
+      try {
+        await this.openSse({ method: 'GET', path, headers }, handle, current.signal, { onData: hooks.onData });
+        if (finished) return;
+        // Se cerró sin el evento final: reconectamos.
+      } catch (error) {
+        if (signal?.aborted) throw new HermesError('aborted', strings().errors.cancelled);
+        if (current.signal.aborted) continue; // reconexión pedida: sin espera
+        if (error instanceof HermesError && error.status === 404) {
+          // Hermes ya no guarda el stream (el turno terminó hace rato, o pasaron 5 minutos
+          // sin nadie conectado): queda su estado.
+          await this.finishFromStatus(runId, onEvent, signal);
+          return;
+        }
+        if (!retryable(error)) throw error;
+      } finally {
+        signal?.removeEventListener('abort', onAbort);
+      }
+      failures += 1;
+      const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.min(failures - 1, 4));
+      await new Promise<void>((resolve, reject) => {
+        nudge = resolve;
+        wait(delay, signal).then(resolve, reject);
+      }).finally(() => {
+        nudge = null;
+      });
+    }
+  }
+
+  /** Espera a que el turno termine y emite su final como si hubiera llegado por el stream. */
+  private async finishFromStatus(
+    runId: string,
+    onEvent: (event: SseEvent) => void,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    const deadline = Date.now() + STATUS_WAIT_MS;
+    while (Date.now() < deadline) {
+      try {
+        const status = asRecord(await this.request(`/v1/runs/${encodeURIComponent(runId)}`, { signal }));
+        const run = mapRun(status);
+        if (status && run?.finished) {
+          normalizeRunEvent({ event: null, data: { ...status, event: `run.${run.status}` } }).forEach(onEvent);
+          return;
+        }
+      } catch (error) {
+        // Sin estado (venció o el servidor se reinició): lo guardado en la conversación es lo que hay.
+        if (error instanceof HermesError && error.status === 404) return;
+        if (!retryable(error)) throw error;
+      }
+      await wait(STATUS_POLL_MS, signal);
+    }
   }
 
   private requireSession(payload: unknown, fallback: string): HermesSession {
@@ -354,7 +594,7 @@ export class HermesClient {
   private async request(path: string, options: RequestOptions = {}): Promise<unknown> {
     const timeout = this.linkTimeout(options.timeoutMs ?? this.timeoutMs, options.signal);
     try {
-      const headers: Record<string, string> = { Accept: 'application/json' };
+      const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
       if (options.auth !== false && this.apiKey) {
         headers.Authorization = `Bearer ${this.apiKey}`;
       }
@@ -385,9 +625,18 @@ export class HermesClient {
     }
   }
 
+  private openSse(
+    request: SseRequest,
+    onEvent: (event: SseEvent) => void,
+    signal: AbortSignal | undefined,
+    hooks: StreamHooks,
+  ): Promise<void> {
+    if (isReactNative()) return this.streamWithXhr(request, onEvent, signal, hooks);
+    return this.streamWithFetch(request, onEvent, signal, hooks);
+  }
+
   private async streamWithFetch(
-    path: string,
-    body: Record<string, unknown>,
+    request: SseRequest,
     onEvent: (event: SseEvent) => void,
     signal: AbortSignal | undefined,
     hooks: StreamHooks,
@@ -395,10 +644,10 @@ export class HermesClient {
     try {
       let response: Response;
       try {
-        response = await this.fetchImpl(joinUrl(this.baseUrl, path), {
-          method: 'POST',
-          headers: this.streamHeaders(),
-          body: JSON.stringify(body),
+        response = await this.fetchImpl(joinUrl(this.baseUrl, request.path), {
+          method: request.method,
+          headers: this.streamHeaders(request),
+          body: request.body ? JSON.stringify(request.body) : undefined,
           signal,
         });
       } catch (error) {
@@ -419,8 +668,7 @@ export class HermesClient {
   }
 
   private streamWithXhr(
-    path: string,
-    body: Record<string, unknown>,
+    request: SseRequest,
     onEvent: (event: SseEvent) => void,
     signal: AbortSignal | undefined,
     hooks: StreamHooks,
@@ -451,8 +699,8 @@ export class HermesClient {
         parsed.events.forEach(onEvent);
       };
 
-      xhr.open('POST', joinUrl(this.baseUrl, path));
-      const headers = this.streamHeaders();
+      xhr.open(request.method, joinUrl(this.baseUrl, request.path));
+      const headers = this.streamHeaders(request);
       for (const [key, value] of Object.entries(headers)) {
         xhr.setRequestHeader(key, value);
       }
@@ -486,15 +734,16 @@ export class HermesClient {
         }
         signal.addEventListener('abort', () => xhr.abort(), { once: true });
       }
-      xhr.send(JSON.stringify(body));
+      xhr.send(request.body ? JSON.stringify(request.body) : null);
     });
   }
 
-  private streamHeaders(): Record<string, string> {
+  private streamHeaders(request: SseRequest): Record<string, string> {
     return {
       Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
+      ...(request.body ? { 'Content-Type': 'application/json' } : {}),
       Authorization: `Bearer ${this.apiKey}`,
+      ...request.headers,
     };
   }
 

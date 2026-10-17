@@ -34,6 +34,33 @@ export type HermesJob = {
   deliver: string;
 };
 
+/** Estado de un turno según `GET /v1/runs/{id}`. Hermes lo guarda una hora después de terminar. */
+export type HermesRun = {
+  id: string;
+  status: string;
+  /** Terminó: `completed`, `failed`, `cancelled` o `interrupted`. */
+  finished: boolean;
+  output: string;
+  error: string;
+  /** Por qué no terminó, por ejemplo `max_iterations_reached(30/30)`. */
+  exitReason: string;
+};
+
+const FINISHED_RUN_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+
+/** Lo que anuncia `GET /v1/capabilities`. */
+export type HermesCapabilities = {
+  /** Modelo por defecto del servidor. */
+  model: string;
+  /** Banderas de `features`, por ejemplo `run_steer` o `session_model_lock`. */
+  features: Record<string, boolean>;
+  /** Nombres de la tabla `endpoints`, por ejemplo `sessions` o `session_chat_stream`. */
+  endpoints: string[];
+};
+
+/** Sin esto la app no funciona: son las rutas de las conversaciones y del chat. */
+const CORE_ENDPOINTS = ['sessions', 'session_messages', 'session_chat_stream'];
+
 export type HermesAttachment = {
   kind: 'image';
   label: string;
@@ -53,7 +80,19 @@ export type HermesMessage = {
   reasoning: string;
   toolName: string | null;
   attachments: HermesAttachment[];
+  /** Corrección que el usuario mandó con el turno en curso (`/steer`). */
+  steer: boolean;
 };
+
+/** Título exacto del chat permanente de cada Bot (un perfil de Hermes). */
+export const BOT_CHAT_TITLE = 'Bot Chat';
+
+/** Hermes entrega cada corrección envuelta en este marcador; en pantalla va solo el texto. */
+const STEER_MARKER = /^\s*\[OUT-OF-BAND USER MESSAGE[^\]]*\]\s*([\s\S]*?)\s*\[\/OUT-OF-BAND USER MESSAGE\]\s*$/;
+
+export function steerText(text: string): string {
+  return STEER_MARKER.exec(text)?.[1] ?? text;
+}
 
 export type ModelSelection = {
   providerId: string;
@@ -291,14 +330,17 @@ export function mapMessages(payload: unknown): HermesMessage[] {
     const record = asRecord(row);
     if (!record) return [];
     const role = (stringField(record, 'role') || 'other').toLowerCase();
+    const steer = record.display_kind === 'steer';
+    const text = messageText(record.content);
     return [
       {
         id: stringField(record, 'id') || `msg-${index}`,
         role,
-        text: messageText(record.content),
+        text: steer ? steerText(text) : text,
         reasoning: messageReasoning(record.content, record),
         toolName: stringField(record, 'tool_name') || stringField(record, 'tool'),
         attachments: messageAttachments(record.content),
+        steer,
       },
     ];
   });
@@ -405,6 +447,55 @@ export function mapJob(raw: unknown): HermesJob | null {
     paused: state === 'paused' || record.enabled === false,
     deliver: stringField(record, 'deliver') || 'local',
   };
+}
+
+export function mapRun(payload: unknown): HermesRun | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  const id = stringField(record, 'run_id') ?? stringField(record, 'id');
+  const status = stringField(record, 'status');
+  if (!id || !status) return null;
+  const error = asRecord(record.error);
+  return {
+    id,
+    status,
+    finished: FINISHED_RUN_STATUSES.has(status),
+    output: stringField(record, 'output') ?? '',
+    error: stringField(record, 'error') ?? (error ? stringField(error, 'message') : null) ?? '',
+    exitReason: stringField(record, 'turn_exit_reason') ?? '',
+  };
+}
+
+export function mapCapabilities(payload: unknown): HermesCapabilities | null {
+  const record = asRecord(payload);
+  const rawFeatures = asRecord(record?.features);
+  if (!record || !rawFeatures) return null;
+  const features: Record<string, boolean> = {};
+  for (const [name, value] of Object.entries(rawFeatures)) {
+    if (typeof value === 'boolean') features[name] = value;
+    const nested = asRecord(value);
+    if (typeof nested?.supported === 'boolean') features[name] = nested.supported;
+    else if (typeof nested?.enabled === 'boolean') features[name] = nested.enabled;
+  }
+  return {
+    model: stringField(record, 'model') ?? '',
+    features,
+    endpoints: Object.keys(asRecord(record.endpoints) ?? {}),
+  };
+}
+
+/**
+ * Si el servidor ofrece una función. Sin datos (servidor viejo, sin `/v1/capabilities`) o sin
+ * esa bandera se asume que sí, como hacía la app antes de preguntar.
+ */
+export function capabilityFlag(capabilities: HermesCapabilities | null, feature: string): boolean {
+  return capabilities?.features[feature] ?? true;
+}
+
+/** Rutas imprescindibles que el servidor no anuncia; vacío si están todas o no hay datos. */
+export function missingCoreEndpoints(capabilities: HermesCapabilities | null): string[] {
+  if (!capabilities || capabilities.endpoints.length === 0) return [];
+  return CORE_ENDPOINTS.filter((name) => !capabilities.endpoints.includes(name));
 }
 
 export function mapJobs(payload: unknown): HermesJob[] {

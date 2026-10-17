@@ -1,4 +1,5 @@
 import { strings } from '@/lib/i18n';
+import { failureText } from '@/lib/run-recovery';
 
 /** En qué está la respuesta en curso, para decirle al usuario qué pasa mientras espera. */
 export type StreamPhase =
@@ -96,16 +97,17 @@ export type StreamStop = {
 
 /**
  * Texto del fallo si el evento termina el turno con error; `null` si no es un fallo. Hermes
- * manda `run.failed` cuando el agente no termina, y `error` (sin `run.failed`) si se cae.
+ * manda `run.failed` cuando el agente no termina (con `turn_exit_reason`, no con `error`), y
+ * `error` (sin `run.failed`) si se cae.
  */
 export function runFailureMessage(name: string, data: Record<string, unknown>): string | null {
   if (name !== 'run.failed' && name !== 'error') return null;
   const raw = name === 'error' ? data.message : data.error;
-  if (typeof raw === 'string' && raw.trim()) return raw;
-  if (raw && typeof raw === 'object' && 'message' in raw && typeof raw.message === 'string' && raw.message.trim()) {
-    return raw.message;
-  }
-  return strings().chat.runFailed;
+  let error = '';
+  if (typeof raw === 'string') error = raw;
+  else if (raw && typeof raw === 'object' && 'message' in raw && typeof raw.message === 'string') error = raw.message;
+  const reason = typeof data.turn_exit_reason === 'string' ? data.turn_exit_reason : '';
+  return failureText(error, reason);
 }
 
 /**
@@ -127,7 +129,8 @@ export function stopReason(opts: {
     return { message: strings().chat.connectionLost, recover: false };
   }
   if (opts.aborted) return { message: null, recover: false };
-  // Minimizar la app corta el socket, pero el servidor sigue con el turno: no es un fallo.
+  // Minimizar la app puede cortar el socket. Hermes detiene el turno cuando nota el corte,
+  // pero puede haber terminado antes: hay que preguntarle en qué quedó.
   if (opts.backgrounded) return { message: null, recover: true };
   return { message: opts.describe(), recover: false };
 }
