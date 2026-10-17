@@ -4,6 +4,7 @@ import { ChevronLeftIcon } from 'react-native-heroicons/outline';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 
 type ScreenShellProps = {
@@ -26,6 +27,7 @@ export function ScreenShell({
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
 
   const body = scroll ? (
     <ScrollView
@@ -45,7 +47,7 @@ export function ScreenShell({
         {onBack ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Atrás"
+            accessibilityLabel={str.common.back}
             hitSlop={8}
             onPress={onBack}
           >

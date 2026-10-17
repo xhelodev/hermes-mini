@@ -1,3 +1,5 @@
+import { strings } from '@/lib/i18n';
+
 /** En qué está la respuesta en curso, para decirle al usuario qué pasa mientras espera. */
 export type StreamPhase =
   | { kind: 'uploading'; percent: number | null }
@@ -20,30 +22,31 @@ const ELAPSED_AFTER_MS = 5_000;
 
 export function toolNameOf(data: Record<string, unknown>): string {
   const name = data.tool_name ?? data.tool;
-  return typeof name === 'string' && name.trim() ? name.trim() : 'herramienta';
+  return typeof name === 'string' && name.trim() ? name.trim() : strings().stream.tool;
 }
 
 export function phaseLabel(phase: StreamPhase): string {
+  const text = strings().stream;
   switch (phase.kind) {
     case 'uploading':
-      return phase.percent === null ? 'Subiendo adjuntos…' : `Subiendo adjuntos… ${phase.percent}%`;
+      return phase.percent === null ? text.uploading : text.uploadingPercent(phase.percent);
     case 'waiting':
-      return 'Esperando al servidor…';
+      return text.waiting;
     case 'thinking':
-      return 'Pensando…';
+      return text.thinking;
     case 'reasoning':
-      return 'Razonando…';
+      return text.reasoning;
     case 'tool':
-      return `Usando ${phase.name}…`;
+      return text.usingTool(phase.name);
     case 'approval':
-      return 'Esperando tu decisión…';
+      return text.approval;
     case 'writing':
-      return 'Escribiendo…';
+      return text.writing;
   }
 }
 
 export function statusLabel(status: StreamStatus): string {
-  return status.slow ? 'La conexión parece lenta…' : phaseLabel(status.phase);
+  return status.slow ? strings().stream.slow : phaseLabel(status.phase);
 }
 
 /** Etapa a la que pasa la respuesta con este evento del stream; `null` si no cambia. */

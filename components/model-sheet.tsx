@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
 import { useConnection, useHermesClient } from '@/contexts/connection-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { describeHermesError, type ModelSelection } from '@/lib/hermes';
 
@@ -20,6 +21,7 @@ export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetPro
   const { defaultModel, modelForSession, setDefaultModel, setSessionModel } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   const insets = useSafeAreaInsets();
   const [options, setOptions] = useState<ModelSelection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,21 +82,21 @@ export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetPro
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <Pressable accessibilityLabel="Cerrar" style={styles.dismiss} onPress={onClose} />
+        <Pressable accessibilityLabel={str.common.close} style={styles.dismiss} onPress={onClose} />
         <View style={[styles.sheet, { backgroundColor: t.bg, paddingBottom: insets.bottom + 16 }]}>
           <View style={[styles.handle, { backgroundColor: t.bd }]} />
           <Text style={[styles.title, { color: t.fg }]}>{title}</Text>
           <View style={styles.subtitleRow}>
-            <Text style={[styles.subtitle, { color: t.mut }]}>Lista traída de tu servidor</Text>
+            <Text style={[styles.subtitle, { color: t.mut }]}>{str.models.subtitle}</Text>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Actualizar modelos"
+              accessibilityLabel={str.models.refreshLabel}
               disabled={refreshing || locking}
               onPress={() => {
                 void refresh();
               }}
             >
-              <Text style={{ color: t.fg }}>{refreshing ? '…' : 'Actualizar'}</Text>
+              <Text style={{ color: t.fg }}>{refreshing ? '…' : str.models.refresh}</Text>
             </Pressable>
           </View>
           {options === null && !error ? <ActivityIndicator color={t.pri} /> : null}
@@ -121,7 +123,7 @@ export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetPro
                   <View style={styles.optionText}>
                     <Text style={[styles.optionLabel, { color: t.fg }]}>{option.label}</Text>
                     <Text style={[styles.optionMeta, { color: t.mut }]}>
-                      {isDefault ? 'por defecto' : option.providerLabel}
+                      {isDefault ? str.models.isDefault : option.providerLabel}
                     </Text>
                   </View>
                   {active ? <CheckIcon color={t.fg} size={20} /> : null}
@@ -129,7 +131,7 @@ export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetPro
               );
             })}
             {options && options.length === 0 && !error ? (
-              <Text style={{ color: t.mut }}>El servidor no devolvió modelos.</Text>
+              <Text style={{ color: t.mut }}>{str.models.empty}</Text>
             ) : null}
           </ScrollView>
         </View>

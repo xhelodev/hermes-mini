@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ConfirmHost } from '@/components/confirm-host';
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import type { HermesSession } from '@/lib/hermes';
 
@@ -43,25 +44,27 @@ function SessionMenu({
   const insets = useSafeAreaInsets();
   const [renaming, setRenaming] = useState(startRenaming);
   const [title, setTitle] = useState(session.title);
+  const str = useStrings();
+  const text = str.sessionMenu;
   const items = [
-    { label: 'Renombrar', onPress: () => setRenaming(true) },
-    { label: session.pinned ? 'Quitar de fijadas' : 'Fijar conversación', onPress: onTogglePin },
-    { label: 'Ramificar', onPress: onFork },
-    { label: 'Borrar', onPress: onDelete },
+    { label: str.swipe.actions.rename, onPress: () => setRenaming(true) },
+    { label: session.pinned ? text.unpin : text.pin, onPress: onTogglePin },
+    { label: str.swipe.actions.fork, onPress: onFork },
+    { label: str.common.delete, onPress: onDelete },
   ];
 
   return (
     <View style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.45)' }]}>
-      <Pressable accessibilityLabel="Cerrar" style={styles.dismiss} onPress={onClose} />
+      <Pressable accessibilityLabel={str.common.close} style={styles.dismiss} onPress={onClose} />
       <View style={[styles.menu, { backgroundColor: t.card, marginBottom: insets.bottom + 16 }]}>
         {renaming ? (
           <View style={styles.rename}>
-            <Text style={{ color: t.fg }}>Nuevo título</Text>
+            <Text style={{ color: t.fg }}>{text.newTitle}</Text>
             <TextInput
               value={title}
               onChangeText={setTitle}
               autoFocus
-              placeholder="Título"
+              placeholder={text.titlePlaceholder}
               placeholderTextColor={t.mut}
               style={[styles.input, { borderColor: t.bd, color: t.fg }]}
             />
@@ -71,7 +74,7 @@ function SessionMenu({
               onPress={() => onRename(title.trim())}
               style={{ opacity: busy || !title.trim() ? 0.5 : 1 }}
             >
-              <Text style={{ color: t.fg }}>{busy ? 'Guardando…' : 'Guardar'}</Text>
+              <Text style={{ color: t.fg }}>{busy ? str.jobs.saving : str.jobs.save}</Text>
             </Pressable>
           </View>
         ) : (

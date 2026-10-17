@@ -1,5 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 
+import { strings } from '@/lib/i18n';
+
 export type PickedMedia = {
   uri: string;
   name: string;
@@ -30,14 +32,14 @@ function fromImageAsset(asset: ImagePicker.ImagePickerAsset): PickedMedia {
 async function ensureCamera(): Promise<void> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
-    throw new PickerError('Necesitamos permiso para usar la cámara.');
+    throw new PickerError(strings().attach.cameraPermission);
   }
 }
 
 async function ensureLibrary(): Promise<void> {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
-    throw new PickerError('Necesitamos permiso para ver tus fotos.');
+    throw new PickerError(strings().attach.libraryPermission);
   }
 }
 

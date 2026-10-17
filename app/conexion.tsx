@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { useConnection } from '@/contexts/connection-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { confirmAction } from '@/lib/confirm';
 import {
@@ -28,6 +29,8 @@ import { describeHermesError, HermesClient, HermesError, normalizeBaseUrl } from
 export default function ConexionScreen() {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
+  const text = str.connect;
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardInset();
   const { hydrated, baseUrl, apiKey, saveConnection } = useConnection();
@@ -70,7 +73,7 @@ export default function ConexionScreen() {
     try {
       const normalized = normalizeBaseUrl(url);
       if (!key.trim()) {
-        setMessage('Ingresá la clave de la API.');
+        setMessage(text.keyMissing);
         return;
       }
       const probe = await new HermesClient({ baseUrl: normalized, apiKey: key }).probe();
@@ -78,7 +81,7 @@ export default function ConexionScreen() {
       // El historial es un extra: si falla, igual se entra.
       await recordConnection(normalized, key, remember).catch(() => undefined);
       setOk(true);
-      setMessage(`Conexión OK · Hermes · ${probe.latencyMs} ms`);
+      setMessage(text.ok(probe.latencyMs));
       await new Promise((resolve) => setTimeout(resolve, 450));
       if (alive.current) router.replace('/conversaciones');
     } catch (error) {
@@ -86,7 +89,7 @@ export default function ConexionScreen() {
       setMessage(
         error instanceof HermesError
           ? describeHermesError(error)
-          : 'No se pudo guardar la clave en este teléfono.',
+          : text.saveFailed,
       );
     } finally {
       if (alive.current) setBusy(false);
@@ -113,9 +116,9 @@ export default function ConexionScreen() {
 
   function onClearHistory() {
     confirmAction({
-      title: 'Limpiar historial',
-      message: 'Se borran los servidores recientes y las claves guardadas con ellos.',
-      confirmLabel: 'Limpiar',
+      title: str.history.clearTitle,
+      message: str.history.clearMessage,
+      confirmLabel: str.history.clear,
       destructive: true,
       onConfirm: () => {
         void clearHistory()
@@ -136,7 +139,7 @@ export default function ConexionScreen() {
 
   return (
     <>
-      <ScreenShell title="Conectar con Hermes" scroll={false}>
+      <ScreenShell title={text.title} scroll={false}>
         <View style={[styles.flex, { paddingBottom: keyboard.height }]}>
           <ScrollView
             style={styles.flex}
@@ -144,10 +147,10 @@ export default function ConexionScreen() {
             keyboardShouldPersistTaps="handled"
           >
             <Field
-              label="URL del servidor"
+              label={text.url}
               value={url}
               onChangeText={setUrl}
-              placeholder="https://ejemplo.com"
+              placeholder={text.urlPlaceholder}
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="url"
@@ -157,10 +160,10 @@ export default function ConexionScreen() {
               mutedColor={t.mut}
             />
             <Field
-              label="Clave de la API"
+              label={text.key}
               value={key}
               onChangeText={setKey}
-              placeholder="tu clave"
+              placeholder={text.keyPlaceholder}
               secureTextEntry
               autoCapitalize="none"
               autoCorrect={false}
@@ -172,7 +175,7 @@ export default function ConexionScreen() {
             <Pressable
               accessibilityRole="checkbox"
               accessibilityState={{ checked: remember }}
-              accessibilityLabel="Recordar en este teléfono"
+              accessibilityLabel={text.remember}
               disabled={busy}
               onPress={() => setRemember((current) => !current)}
               style={styles.remember}
@@ -188,17 +191,17 @@ export default function ConexionScreen() {
               >
                 {remember ? <CheckIcon color={t.pfg} size={16} /> : null}
               </View>
-              <Text style={{ color: t.fg }}>Recordar en este teléfono</Text>
+              <Text style={{ color: t.fg }}>{text.remember}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="link"
-              accessibilityLabel="¿Cómo obtengo la URL y la clave?"
+              accessibilityLabel={text.help}
               onPress={() => setHelpOpen(true)}
               hitSlop={8}
               style={styles.helpRow}
             >
               <InformationCircleIcon color={t.pri} size={20} />
-              <Text style={[styles.help, { color: t.pri }]}>¿Cómo obtengo la URL y la clave?</Text>
+              <Text style={[styles.help, { color: t.pri }]}>{text.help}</Text>
             </Pressable>
             {message ? (
               <View style={[styles.message, { borderColor: t.bd, backgroundColor: t.card }]}>
@@ -223,7 +226,7 @@ export default function ConexionScreen() {
             style={[styles.footer, { paddingBottom: keyboard.visible ? 12 : insets.bottom + 12 }]}
           >
             <Button
-              label={busy ? 'Probando…' : 'Guardar y entrar'}
+              label={busy ? text.testing : text.submit}
               backgroundColor={t.pri}
               textColor={t.pfg}
               disabled={busy}
@@ -233,8 +236,8 @@ export default function ConexionScreen() {
             />
             <Text style={[styles.hint, { color: t.mut }]}>
               {remember
-                ? 'La clave queda cifrada en este teléfono.'
-                : 'La clave no se guarda. Vas a tener que conectarte de nuevo.'}
+                ? text.keyEncrypted
+                : text.keyNotSaved}
             </Text>
           </View>
         </View>

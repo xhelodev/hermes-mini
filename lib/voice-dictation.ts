@@ -5,6 +5,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 
 import { voiceFailureMessage, voiceMissedSpeech } from '@/lib/voice-locale';
+import { strings } from '@/lib/i18n';
 
 type VoiceDictationOptions = {
   locale: string;
@@ -98,7 +99,7 @@ export function useVoiceDictation({
       onTranscriptRef.current(text);
       return;
     }
-    if (missed) onNoticeRef.current('No se entendió la voz.');
+    if (missed) onNoticeRef.current(strings().voice.missed);
   });
 
   useEffect(() => {
@@ -122,7 +123,7 @@ export function useVoiceDictation({
       if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
         holdingRef.current = false;
         setHolding(false);
-        onNoticeRef.current('Este teléfono no tiene reconocimiento de voz.');
+        onNoticeRef.current(strings().voice.unavailable);
         return;
       }
       const permission = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
@@ -130,7 +131,7 @@ export function useVoiceDictation({
       if (!permission.granted) {
         holdingRef.current = false;
         setHolding(false);
-        onNoticeRef.current('Hermes Mini necesita el micrófono para dictar.');
+        onNoticeRef.current(strings().voice.needsMicrophone);
         return;
       }
       startedRef.current = true;
@@ -146,7 +147,7 @@ export function useVoiceDictation({
       setHolding(false);
       setListening(false);
       clearTimer();
-      onErrorRef.current('No se pudo dictar el mensaje.');
+      onErrorRef.current(strings().voice.failed);
     }
   }
 

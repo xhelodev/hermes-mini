@@ -5,6 +5,7 @@ import { ChatMarkdown } from '@/components/chat-markdown';
 import { ReasoningFold, type ReasoningNote } from '@/components/reasoning-fold';
 import { ThinkingRow } from '@/components/stream-status';
 import { Text } from '@/components/ui/text';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { statusLabel, type StreamStatus } from '@/lib/stream-progress';
 
@@ -66,6 +67,7 @@ export const MessageList = memo(function MessageList({
 }: MessageListProps) {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   // Si el usuario subió a leer, el stream no lo arrastra al final.
   const following = useRef(true);
   const lastUserId = lastUserLineId(lines);
@@ -91,7 +93,7 @@ export const MessageList = memo(function MessageList({
       }}
     >
       {lines.length === 0 ? (
-        <Text style={[styles.textSm, { color: t.mut }]}>Escribí el primer mensaje.</Text>
+        <Text style={[styles.textSm, { color: t.mut }]}>{str.chat.firstMessage}</Text>
       ) : null}
       {lines.map((line) => {
         const live = line.kind === 'assistant' && sending && line.id === streamId;
@@ -117,7 +119,7 @@ export const MessageList = memo(function MessageList({
               { backgroundColor: t.card, borderColor: t.bd, borderWidth: 1 },
             ]}
           >
-            <ThinkingRow color={t.mut} label="Respondiendo…" />
+            <ThinkingRow color={t.mut} label={str.sessions.responding} />
           </View>
         </View>
       ) : null}
@@ -148,6 +150,7 @@ const MessageRow = memo(function MessageRow({
 }: MessageRowProps) {
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   const mine = line.kind === 'user';
   const hasText = Boolean(line.text.trim());
   const waiting = live && !hasText;
@@ -165,7 +168,7 @@ const MessageRow = memo(function MessageRow({
           <Pressable
             key={`${line.id}-file-${index}`}
             accessibilityRole="button"
-            accessibilityLabel="Ver imagen"
+            accessibilityLabel={str.chat.viewImage}
             onPress={() => {
               if (item.uri) onOpenImage(item.uri);
             }}
@@ -196,7 +199,7 @@ const MessageRow = memo(function MessageRow({
         >
           <ThinkingRow
             color={t.mut}
-            label={status ? statusLabel(status) : 'Pensando…'}
+            label={status ? statusLabel(status) : str.stream.thinking}
             since={status?.since}
           />
         </View>
@@ -231,17 +234,17 @@ const MessageRow = memo(function MessageRow({
         <View style={styles.actions}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Copiar mensaje"
+            accessibilityLabel={str.chat.copyMessage}
             onPress={() => onCopy(line.id, line.text)}
           >
-            <Text style={[styles.textSm, { color: t.mut }]}>{copied ? 'Copiado' : 'Copiar'}</Text>
+            <Text style={[styles.textSm, { color: t.mut }]}>{copied ? str.chat.copied : str.chat.copy}</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Más acciones"
+            accessibilityLabel={str.chat.moreActions}
             onPress={() => onMore(line.id, line.text)}
           >
-            <Text style={[styles.textSm, { color: t.mut }]}>Más</Text>
+            <Text style={[styles.textSm, { color: t.mut }]}>{str.chat.more}</Text>
           </Pressable>
         </View>
       ) : null}

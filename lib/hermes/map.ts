@@ -1,3 +1,5 @@
+import { getLanguage, strings } from '@/lib/i18n';
+
 export type HermesSession = {
   id: string;
   title: string;
@@ -115,7 +117,7 @@ export function messageAttachments(content: unknown): HermesAttachment[] {
     const record = asRecord(part);
     if (!record) continue;
     if (record.type === 'image_url' || record.type === 'input_image' || record.image_url) {
-      attachments.push({ kind: 'image', label: 'Imagen', url: imagePartUrl(record) });
+      attachments.push({ kind: 'image', label: strings().sessions.image, url: imagePartUrl(record) });
     }
   }
   return attachments;
@@ -259,7 +261,7 @@ export function mapSession(raw: unknown): HermesSession | null {
   if (!id) return null;
   return {
     id,
-    title: stringField(record, 'title') || 'Sin título',
+    title: stringField(record, 'title') || strings().sessions.untitled,
     source: stringField(record, 'source'),
     preview: stringField(record, 'preview') || previewFromMessages(record.messages),
     updatedAt: parseTimestamp(
@@ -396,7 +398,7 @@ export function mapJob(raw: unknown): HermesJob | null {
   const state = stringField(record, 'state') || (record.enabled === false ? 'paused' : 'scheduled');
   return {
     id,
-    name: stringField(record, 'name') || 'Sin nombre',
+    name: stringField(record, 'name') || strings().jobs.unnamed,
     prompt: stringField(record, 'prompt') || '',
     schedule: scheduleText(record.schedule),
     state,
@@ -449,7 +451,7 @@ export function formatSessionTime(ms: number | null, now = Date.now()): string {
     date.getMonth() === current.getMonth() &&
     date.getDate() === current.getDate();
   if (sameDay) {
-    return date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString(getLanguage(), { hour: '2-digit', minute: '2-digit' });
   }
   const yesterday = new Date(current);
   yesterday.setDate(current.getDate() - 1);
@@ -457,6 +459,6 @@ export function formatSessionTime(ms: number | null, now = Date.now()): string {
     date.getFullYear() === yesterday.getFullYear() &&
     date.getMonth() === yesterday.getMonth() &&
     date.getDate() === yesterday.getDate();
-  if (isYesterday) return 'Ayer';
-  return date.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+  if (isYesterday) return strings().sessions.yesterday;
+  return date.toLocaleDateString(getLanguage(), { day: 'numeric', month: 'short' });
 }

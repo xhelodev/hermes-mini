@@ -24,9 +24,11 @@ import type { ReasoningNote } from '@/components/reasoning-fold';
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
 import { RequireConnection, useConnection, useHermesClient } from '@/contexts/connection-context';
+import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
 import { formatByteSize } from '@/lib/format';
+import { strings } from '@/lib/i18n';
 import { useKeyboardInset } from '@/lib/keyboard-inset';
 import {
   describeHermesError,
@@ -97,13 +99,6 @@ type DeltaBuffer = { assistantId: string; text: string; reasoning: string };
 /** Cada cuánto se pintan los tokens acumulados: un render por tanda en vez de uno por token. */
 const DELTA_FLUSH_MS = 50;
 
-const CHOICE_LABELS: Record<string, string> = {
-  once: 'Solo esta vez',
-  session: 'En esta conversación',
-  always: 'Siempre',
-  deny: 'Bloquear',
-};
-
 function oneParam(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] ?? '';
   return value ?? '';
@@ -123,7 +118,7 @@ function assistantLine(id: string, text: string, notes: ReasoningNote[] = []): C
 }
 
 function toolNote(message: HermesMessage): ReasoningNote {
-  const name = message.toolName || 'herramienta';
+  const name = message.toolName || strings().stream.tool;
   const body = message.text.trim();
   return {
     id: message.id,
@@ -240,7 +235,8 @@ function chipLabel(name: string, sizeLabel: string): string {
 }
 
 function choiceLabel(choice: string): string {
-  return CHOICE_LABELS[choice] ?? choice;
+  const labels: Record<string, string> = strings().approval.choices;
+  return labels[choice] ?? choice;
 }
 
 function stringList(value: unknown): string[] {
@@ -264,12 +260,13 @@ function ChatBody() {
   const { modelForSession } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
+  const str = useStrings();
   const insets = useSafeAreaInsets();
   const screen = useWindowDimensions();
   const keyboard = useKeyboardInset();
   const scrollRef = useRef<ScrollView>(null);
   const [title, setTitle] = useState(
-    () => cached?.title || oneParam(params.title) || 'Conversación',
+    () => cached?.title || oneParam(params.title) || str.chat.title,
   );
   const [lines, setLines] = useState<ChatLine[]>(() => cached?.lines ?? []);
   const [draft, setDraft] = useState('');
@@ -509,7 +506,7 @@ function ChatBody() {
           ? raw
           : raw && typeof raw === 'object' && 'message' in raw && typeof raw.message === 'string'
             ? raw.message
-            : 'La respuesta falló.';
+            : str.chat.runFailed;
       setError(message);
     }
     if (name === 'run.completed' || name === 'run.cancelled') {
@@ -571,8 +568,8 @@ function ChatBody() {
       if (name === 'assistant.delta' && typeof data.delta === 'string') reply += data.delta;
       else if (name === 'assistant.completed') reply = messageText(data.content) || reply;
       else if (name === 'run.completed' && !reply.trim()) reply = finalAssistantReply(data.messages).text;
-      else if (name === 'tool.started') setRunActivity(sessionId, `Usando ${toolNameOf(data)}…`);
-      else if (name === 'approval.request') setRunActivity(sessionId, 'Esperando tu decisión…');
+      else if (name === 'tool.started') setRunActivity(sessionId, strings().stream.usingTool(toolNameOf(data)));
+      else if (name === 'approval.request') setRunActivity(sessionId, strings().stream.approval);
       else if (name === 'tool.completed' || name === 'tool.failed') setRunActivity(sessionId, null);
     };
     setLines((current) => {
@@ -614,7 +611,7 @@ function ChatBody() {
     } catch (err) {
       if (!alive.current) return;
       const message = lost
-        ? 'Se perdió la conexión: el servidor dejó de responder.'
+        ? str.chat.connectionLost
         : abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted')
           ? null
           : describeHermesError(err);
@@ -731,7 +728,7 @@ function ChatBody() {
     const mimeType = dataUrl.startsWith('data:image/jpeg') ? 'image/jpeg' : 'image/png';
     const stored = await saveOutgoingImage(sessionId, {
       uri: dataUrl,
-      name: mimeType === 'image/jpeg' ? 'portapapeles.jpg' : 'portapapeles.png',
+      name: mimeType === 'image/jpeg' ? `${str.chat.clipboardFile}.jpg` : `${str.chat.clipboardFile}.png`,
       mimeType,
     });
     setPending((current) => [
@@ -777,7 +774,7 @@ function ChatBody() {
       await client.approveRun(approval.runId, choice);
       setApproval(null);
       watchdogRef.current?.resume();
-      enterPhase(choice === 'deny' ? { kind: 'thinking' } : { kind: 'tool', name: 'la herramienta' });
+      enterPhase(choice === 'deny' ? { kind: 'thinking' } : { kind: 'tool', name: str.approval.theTool });
     } catch (err) {
       setError(describeHermesError(err));
     } finally {
@@ -798,7 +795,7 @@ function ChatBody() {
     try {
       await Share.share({ message: text });
     } catch {
-      setError('No se pudo abrir el menú para compartir.');
+      setError(str.chat.shareFailed);
     }
   }
 
@@ -814,7 +811,7 @@ function ChatBody() {
           style={[styles.modelChip, { borderColor: t.bd }]}
         >
           <Text numberOfLines={1} style={[styles.textSm, styles.modelLabel, { color: t.fg }]}>
-            {model ? model.label : 'Modelo del servidor'}
+            {model ? model.label : str.chat.serverModel}
           </Text>
           <ChevronDownIcon color={t.fg} size={16} />
         </Pressable>
@@ -844,7 +841,7 @@ function ChatBody() {
             <>
               {dictation.listening ? null : (
                 <Pressable
-                  accessibilityLabel="Cerrar adjuntos"
+                  accessibilityLabel={str.chat.closeAttachments}
                   style={[styles.overlay, { backgroundColor: 'rgba(0,0,0,0.45)' }]}
                   onPress={() => setAttachOpen(false)}
                 />
@@ -865,7 +862,7 @@ function ChatBody() {
         </View>
         {approval ? (
           <View style={[styles.approval, { borderColor: t.bd, backgroundColor: t.card }]}>
-            <Text style={{ color: t.fg }}>El agente quiere ejecutar un comando.</Text>
+            <Text style={{ color: t.fg }}>{str.approval.prompt}</Text>
             {approval.command ? (
               <Text style={[styles.previewText, { color: t.fg }]}>{approval.command}</Text>
             ) : null}
@@ -898,12 +895,12 @@ function ChatBody() {
             {retry && retry.error === error ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Reintentar el mensaje"
+                accessibilityLabel={str.chat.retryMessage}
                 disabled={loading || sending || backgroundRun}
                 onPress={() => onSend(retry.text)}
                 style={[styles.retryBtn, { borderColor: t.bd }]}
               >
-                <Text style={[styles.textSm, { color: t.fg }]}>Reintentar</Text>
+                <Text style={[styles.textSm, { color: t.fg }]}>{str.chat.retry}</Text>
               </Pressable>
             ) : null}
           </View>
@@ -914,7 +911,7 @@ function ChatBody() {
               <Pressable
                 key={item.id}
                 accessibilityRole="button"
-                accessibilityLabel={`Quitar ${item.name}`}
+                accessibilityLabel={str.chat.removeAttachment(item.name)}
                 onPress={() => {
                   if (item.kind === 'image') discardSentImage(item.uri);
                   setPending((current) => current.filter((entry) => entry.id !== item.id));
@@ -944,7 +941,7 @@ function ChatBody() {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Adjuntar"
+            accessibilityLabel={str.attach.title}
             onPress={() => setAttachOpen((open) => !open)}
             style={[styles.iconBtn, { borderColor: t.bd }]}
           >
@@ -953,7 +950,7 @@ function ChatBody() {
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            placeholder="Escribí un mensaje…"
+            placeholder={str.chat.placeholder}
             placeholderTextColor={t.mut}
             multiline
             editable={!loading}
@@ -980,7 +977,7 @@ function ChatBody() {
           {sending ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Detener"
+              accessibilityLabel={str.chat.stop}
               onPress={haltTurn}
               style={[styles.sendBtn, { backgroundColor: t.pri }]}
             >
@@ -990,7 +987,7 @@ function ChatBody() {
           {canSend ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Enviar"
+              accessibilityLabel={str.chat.send}
               disabled={loading}
               onPress={() => {
                 onSend();
@@ -1002,7 +999,7 @@ function ChatBody() {
           ) : sending ? null : (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Dictar mensaje"
+              accessibilityLabel={str.chat.dictate}
               disabled={loading}
               onPressIn={() => {
                 setError(null);
@@ -1019,7 +1016,7 @@ function ChatBody() {
       </View>
       <ModelSheet
         visible={modelsOpen}
-        title="Modelo de esta conversación"
+        title={str.chat.sessionModel}
         sessionId={sessionId}
         onClose={() => setModelsOpen(false)}
       />
@@ -1032,7 +1029,7 @@ function ChatBody() {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Cerrar imagen"
+          accessibilityLabel={str.chat.closeImage}
           onPress={() => setViewer(null)}
           style={styles.viewer}
         >
@@ -1044,7 +1041,7 @@ function ChatBody() {
             />
           ) : null}
           <Text pointerEvents="none" style={[styles.viewerHint, { top: insets.top + 16 }]}>
-            Tocá para cerrar
+            {str.chat.tapToClose}
           </Text>
         </Pressable>
       </Modal>
@@ -1059,13 +1056,13 @@ function ChatBody() {
         onCopy={() => {
           const text = menu?.text ?? '';
           setMenu(null);
-          void Clipboard.setStringAsync(text).then(() => setNotice('Texto copiado.'));
+          void Clipboard.setStringAsync(text).then(() => setNotice(str.chat.textCopied));
         }}
         onRetry={() => {
           const text = menu ? previousUserText(menu.id) : '';
           setMenu(null);
           if (!text) {
-            setError('No hay un mensaje para reintentar.');
+            setError(str.chat.nothingToRetry);
             return;
           }
           void onSend(text);
