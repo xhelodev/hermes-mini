@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ConfirmHost } from '@/components/confirm-host';
+import { BotsProvider } from '@/contexts/bots-context';
 import { ConnectionProvider } from '@/contexts/connection-context';
 import { I18nProvider } from '@/contexts/i18n-context';
 import { SwipeActionsProvider } from '@/contexts/swipe-actions-context';
@@ -40,7 +41,9 @@ export default function RootLayout() {
             <VoiceLocaleProvider>
               <SwipeActionsProvider>
                 <ConnectionProvider>
-                  <ThemedStack />
+                  <BotsProvider>
+                    <ThemedStack />
+                  </BotsProvider>
                 </ConnectionProvider>
               </SwipeActionsProvider>
             </VoiceLocaleProvider>

@@ -25,7 +25,8 @@ import type { ReasoningNote } from '@/components/reasoning-fold';
 import { ConnectionDot } from '@/components/connection-dot';
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
-import { RequireConnection, useConnection, useHermesClient } from '@/contexts/connection-context';
+import { BotScope, useBotScope, useScopedClient } from '@/contexts/bots-context';
+import { RequireConnection, useConnection } from '@/contexts/connection-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
@@ -38,6 +39,7 @@ import {
   HermesError,
   messageText,
   sseEventName,
+  type StreamHooks,
   type ChatContentPart,
   type ChatInput,
   type HermesMessage,
@@ -251,9 +253,13 @@ function stringList(value: unknown): string[] {
 }
 
 export default function ChatScreen() {
+  // Con `?bot=` el chat habla con ese Bot (su perfil) en vez del servidor principal.
+  const params = useLocalSearchParams<{ bot?: string }>();
   return (
     <RequireConnection>
-      <ChatBody />
+      <BotScope bot={oneParam(params.bot)}>
+        <ChatBody />
+      </BotScope>
     </RequireConnection>
   );
 }
@@ -261,9 +267,10 @@ export default function ChatScreen() {
 function ChatBody() {
   const params = useLocalSearchParams<{ id: string; title?: string }>();
   const sessionId = oneParam(params.id);
-  const client = useHermesClient();
+  const client = useScopedClient();
+  const bot = useBotScope();
   const [cached] = useState(() => chatCache.get(client, sessionId));
-  const { modelForSession } = useConnection();
+  const { modelForSession, supports } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
   const str = useStrings();
@@ -315,12 +322,13 @@ function ChatBody() {
 
   const runningAnywhere = useSessionRunning(sessionId);
   const backgroundRun = runningAnywhere && !sending;
-  const model = modelForSession(sessionId);
+  // Un Bot tiene su propio modelo: el general de la app no lo pisa, solo el elegido en este chat.
+  const model = modelForSession(sessionId, !bot);
   const canSend = draft.trim().length > 0 || pending.length > 0;
   // Solo texto, con el turno en marcha y sin una aprobación pendiente (Hermes no acepta
   // correcciones mientras espera tu decisión).
   const canSteer =
-    sending && liveRunId !== null && status !== null && !approval && !steering && pending.length === 0 && draft.trim().length > 0;
+    supports('run_steer') && sending && liveRunId !== null && status !== null && !approval && !steering && pending.length === 0 && draft.trim().length > 0;
   const { locale: voiceLocale } = useVoiceLocale();
   const dictation = useVoiceDictation({
     locale: voiceLocale,
@@ -569,8 +577,12 @@ function ChatBody() {
     startRun(sessionId, prose);
     let reply = '';
     let lost = false;
-    // Al minimizar la app el sistema puede cortar el socket; Hermes detiene el turno si lo nota.
+    // Al minimizar la app el sistema puede cortar el socket. Por el stream de sesión Hermes
+    // detiene el turno si lo nota; por /v1/runs el turno sigue y se retoma al volver.
     let backgrounded = false;
+    // Solo texto va por /v1/runs: las imágenes necesitan la normalización del stream de sesión.
+    const viaRuns = imageParts.length === 0 && supports('run_submission') && supports('run_events_sse');
+    let reconnectRun: (() => void) | null = null;
     const watchdog = createStreamWatchdog({
       onSlow: (slow) => {
         if (!alive.current) return;
@@ -587,6 +599,8 @@ function ChatBody() {
     const appState = AppState.addEventListener('change', (next) => {
       if (next === 'active') {
         watchdog.resume();
+        // El socket pudo morir en segundo plano sin aviso: reabrimos desde el último evento.
+        if (backgrounded) reconnectRun?.();
         return;
       }
       backgrounded = true;
@@ -614,30 +628,39 @@ function ChatBody() {
           await rememberSentImage(sessionId, imageFingerprint(file.dataUrl), file.uri);
         }
       }
-      await client.streamChat(
-        sessionId,
-        payload,
-        model ? { providerId: model.providerId, modelId: model.modelId } : null,
-        (event) => {
-          track(event);
-          applyEvent(event, assistantId);
+      const chosen = model ? { providerId: model.providerId, modelId: model.modelId } : null;
+      const onEvent = (event: SseEvent) => {
+        track(event);
+        applyEvent(event, assistantId);
+      };
+      const hooks: StreamHooks = {
+        onUploadProgress: (fraction) => {
+          watchdog.touch();
+          advanceFrom(
+            ['uploading'],
+            fraction < 1 ? { kind: 'uploading', percent: Math.round(fraction * 100) } : { kind: 'waiting' },
+          );
         },
-        abort.signal,
-        {
-          onUploadProgress: (fraction) => {
-            watchdog.touch();
-            advanceFrom(
-              ['uploading'],
-              fraction < 1 ? { kind: 'uploading', percent: Math.round(fraction * 100) } : { kind: 'waiting' },
-            );
-          },
-          onOpen: () => {
-            watchdog.touch();
-            advanceFrom(['uploading', 'waiting'], { kind: 'thinking' });
-          },
-          onData: watchdog.touch,
+        onOpen: () => {
+          watchdog.touch();
+          advanceFrom(['uploading', 'waiting'], { kind: 'thinking' });
         },
-      );
+        onData: watchdog.touch,
+        onReconnectable: (reconnect) => {
+          reconnectRun = reconnect;
+        },
+      };
+      if (viaRuns) {
+        await client.runChat(sessionId, prose, chosen, onEvent, abort.signal, hooks);
+        // Lo guardado trae el razonamiento, las herramientas y las correcciones del turno, que
+        // /v1/runs no manda completos por el stream.
+        if (alive.current) {
+          flushDeltas();
+          await refreshLines();
+        }
+      } else {
+        await client.streamChat(sessionId, payload, chosen, onEvent, abort.signal, hooks);
+      }
     } catch (err) {
       if (!alive.current) return;
       const aborted = abort.signal.aborted || (err instanceof HermesError && err.code === 'aborted');
@@ -646,7 +669,8 @@ function ChatBody() {
         // El stream se cortó con la app minimizada: preguntamos en qué quedó el turno.
         setNotice(str.chat.recovering);
         enterPhase(null);
-        const outcome = await settleRun((runId) => client.getRun(runId), runIdRef.current, {
+        const runId = supports('run_status') ? runIdRef.current : null;
+        const outcome = await settleRun((id) => client.getRun(id), runId, {
           keepWaiting: () => alive.current && !abort.signal.aborted,
         });
         if (!alive.current) return;
@@ -906,7 +930,8 @@ function ChatBody() {
   return (
     <ScreenShell
       scroll={false}
-      title={title}
+      // El chat de un Bot se llama "Bot Chat": mostramos el nombre del Bot.
+      title={bot ?? title}
       titleAccessory={<ConnectionDot />}
       onBack={() => router.back()}
       headerRight={

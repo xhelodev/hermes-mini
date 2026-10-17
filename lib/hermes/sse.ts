@@ -1,12 +1,15 @@
 export type SseEvent = {
   event: string | null;
   data: Record<string, unknown>;
+  /** Línea `id:`; `/v1/runs/{id}/events` numera así cada evento para retomar desde ahí. */
+  id?: string | null;
 };
 
+/** El stream de sesión lo manda en `event:`; `/v1/runs` lo pone dentro de `data.event`. */
 export function sseEventName(event: SseEvent): string {
   if (event.event) return event.event;
-  const type = event.data.type;
-  return typeof type === 'string' ? type : '';
+  const name = event.data.type ?? event.data.event;
+  return typeof name === 'string' ? name : '';
 }
 
 /** Acumula un chunk SSE y devuelve los eventos completos. Ignora comentarios `: keepalive`. */
@@ -24,6 +27,7 @@ export function pushSseChunk(buffer: string, chunk: string): { buffer: string; e
 
 function parseSseBlock(block: string): SseEvent | null {
   let eventName: string | null = null;
+  let id: string | null = null;
   const dataLines: string[] = [];
 
   for (const rawLine of block.split('\n')) {
@@ -31,6 +35,10 @@ function parseSseBlock(block: string): SseEvent | null {
     if (!line || line.startsWith(':')) continue;
     if (line.startsWith('event:')) {
       eventName = line.slice('event:'.length).trim();
+      continue;
+    }
+    if (line.startsWith('id:')) {
+      id = line.slice('id:'.length).trim();
       continue;
     }
     if (line.startsWith('data:')) {
@@ -45,10 +53,10 @@ function parseSseBlock(block: string): SseEvent | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return { event: eventName, data: parsed as Record<string, unknown> };
+      return { event: eventName, data: parsed as Record<string, unknown>, id };
     }
-    return { event: eventName, data: { value: parsed } };
+    return { event: eventName, data: { value: parsed }, id };
   } catch {
-    return { event: eventName, data: { raw } };
+    return { event: eventName, data: { raw }, id };
   }
 }

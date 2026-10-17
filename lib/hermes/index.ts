@@ -1,9 +1,11 @@
 export { HermesClient, type StreamHooks } from '@/lib/hermes/client';
 export { HermesError, describeHermesError } from '@/lib/hermes/errors';
 export {
+  capabilityFlag,
   finalAssistantReply,
   formatPreview,
   formatSessionTime,
+  mapCapabilities,
   mapJob,
   mapJobs,
   mapMessages,
@@ -14,11 +16,13 @@ export {
   mapSkills,
   mapToolsets,
   messageAttachments,
+  missingCoreEndpoints,
   messageText,
   sourceLabel,
   type ChatContentPart,
   type ChatInput,
   type HermesAttachment,
+  type HermesCapabilities,
   type HermesJob,
   type HermesMessage,
   type HermesRun,

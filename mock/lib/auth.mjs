@@ -1,4 +1,4 @@
-import { MOCK_API_KEY } from './constants.mjs';
+import { currentProfile, profileKey } from './profile-scope.mjs';
 
 export function parseBearer(authHeader) {
   if (!authHeader || typeof authHeader !== 'string') return null;
@@ -9,7 +9,8 @@ export function parseBearer(authHeader) {
 export function requireAuth(req, { allowUnauthenticated = false } = {}) {
   if (allowUnauthenticated) return null;
   const token = parseBearer(req.headers.authorization || req.headers.Authorization);
-  if (!token || token !== MOCK_API_KEY) {
+  // Como Hermes: bajo /p/<perfil>/ vale la clave de ese perfil, no la del principal.
+  if (!token || token !== profileKey(currentProfile())) {
     return { status: 401, body: { error: { message: 'Invalid API key', type: 'invalid_api_key' } } };
   }
   return null;

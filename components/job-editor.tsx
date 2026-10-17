@@ -7,9 +7,10 @@ import { ScreenShell } from '@/components/screen-shell';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
-import { useHermesClient } from '@/contexts/connection-context';
+import { useBotScope, useScopedClient } from '@/contexts/bots-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
+import { routineName, stripRoutinePrefix } from '@/lib/bots';
 import { confirmAction } from '@/lib/confirm';
 import { describeHermesError, HermesError } from '@/lib/hermes';
 import { strings } from '@/lib/i18n';
@@ -19,7 +20,9 @@ type JobEditorProps = {
 };
 
 export function JobEditor({ jobId }: JobEditorProps) {
-  const client = useHermesClient();
+  const client = useScopedClient();
+  // En las rutinas de un Bot el nombre se muestra sin el prefijo `[bot:<nombre>]`.
+  const bot = useBotScope();
   const { theme } = useTheme();
   const t = theme.tokens;
   const str = useStrings();
@@ -41,7 +44,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
       try {
         const job = await client.getJob(jobId);
         if (cancelled) return;
-        setName(job.name);
+        setName(bot ? stripRoutinePrefix(bot, job.name) : job.name);
         setSchedule(job.schedule);
         setPrompt(job.prompt);
         setPaused(job.paused);
@@ -55,7 +58,7 @@ export function JobEditor({ jobId }: JobEditorProps) {
     return () => {
       cancelled = true;
     };
-  }, [client, jobId]);
+  }, [client, jobId, bot]);
 
   async function onSave() {
     if (!name.trim() || !schedule.trim() || !prompt.trim()) {
@@ -67,14 +70,19 @@ export function JobEditor({ jobId }: JobEditorProps) {
     setNotice(null);
     setError(null);
     try {
-      const input = { name: name.trim(), schedule: schedule.trim(), prompt: prompt.trim() };
+      // Con el prefijo, la app de escritorio la muestra en las rutinas de ese Bot.
+      const input = {
+        name: bot ? routineName(bot, name) : name.trim(),
+        schedule: schedule.trim(),
+        prompt: prompt.trim(),
+      };
       if (jobId) {
         const next = await client.patchJob(jobId, input);
         setPaused(next.paused);
         setNotice(text.saved);
       } else {
         const created = await client.createJob(input);
-        router.replace({ pathname: '/jobs/[id]', params: { id: created.id } });
+        router.replace({ pathname: '/jobs/[id]', params: bot ? { id: created.id, bot } : { id: created.id } });
       }
     } catch (err) {
       setError(jobError(err));
