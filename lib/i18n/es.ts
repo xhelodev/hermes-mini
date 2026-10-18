@@ -117,6 +117,7 @@ export const es = {
     swipeLeft: 'Deslizar a la izquierda',
     swipeRight: 'Deslizar a la derecha',
     feedback: 'Reportar un problema o enviar comentario',
+    privacy: 'Política de privacidad',
     mailFailedTitle: 'No se pudo abrir el correo',
     mailFailedMessage: (email: string) =>
       `Copié ${email} al portapapeles. Escribinos desde tu app de correo.`,

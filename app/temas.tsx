@@ -11,6 +11,7 @@ import {
   CpuChipIcon,
   LanguageIcon,
   PuzzlePieceIcon,
+  ShieldCheckIcon,
   TrashIcon,
 } from 'react-native-heroicons/outline';
 import type { NumberProp, SvgProps } from 'react-native-svg';
@@ -31,7 +32,7 @@ import { describeHermesError } from '@/lib/hermes';
 import { hideSessions, restoreHiddenSessions, useHiddenSessions } from '@/lib/hidden-sessions';
 import { useSessionActivity } from '@/lib/session-activity';
 import { swipeActionLabel, type SwipeDirection } from '@/lib/swipe-actions';
-import { feedbackMailto, SUPPORT_EMAIL } from '@/lib/support';
+import { feedbackMailto, PRIVACY_URL, SUPPORT_EMAIL } from '@/lib/support';
 import { THEMES, themeLabel, type ThemeId } from '@/lib/themes';
 
 function ThemePreviewCard({
@@ -246,6 +247,13 @@ function TemasBody() {
               text.mailFailedMessage(SUPPORT_EMAIL),
             );
           });
+        }}
+      />
+      <SettingsRow
+        icon={ShieldCheckIcon}
+        label={text.privacy}
+        onPress={() => {
+          void Linking.openURL(PRIVACY_URL).catch(() => undefined);
         }}
       />
       <Text style={[styles.note, { color: t.mut }]}>

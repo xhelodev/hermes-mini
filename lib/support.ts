@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import { strings } from '@/lib/i18n';
 
 export const SUPPORT_EMAIL = 'hola@carpincho.dev';
+export const PRIVACY_URL = 'https://carpincho.dev/hermes-mini/privacy';
 
 /** mailto con asunto y datos técnicos básicos (sin URL del servidor ni contenido de chats). */
 export function feedbackMailto(): string {
