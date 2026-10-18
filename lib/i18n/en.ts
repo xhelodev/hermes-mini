@@ -117,6 +117,7 @@ export const en: Messages = {
     swipeLeft: 'Swipe left',
     swipeRight: 'Swipe right',
     feedback: 'Report a problem or send feedback',
+    privacy: 'Privacy policy',
     mailFailedTitle: "Couldn't open email",
     mailFailedMessage: (email) =>
       `I copied ${email} to the clipboard. Write to us from your email app.`,
