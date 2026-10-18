@@ -10,6 +10,7 @@ function message(id: string, url: string | null): HermesMessage {
     toolName: null,
     attachments: [{ kind: 'image', label: 'Imagen', url }],
     finishReason: null,
+    steer: false,
   };
 }
 

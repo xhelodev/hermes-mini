@@ -17,6 +17,8 @@ export type ChatLine = {
   text: string;
   attachments: LineAttachment[];
   notes: ReasoningNote[];
+  /** Mensaje del usuario mandado como corrección con el turno en curso. */
+  steer?: boolean;
 };
 
 const SHOWABLE_IMAGE = /^(data:image\/|https?:\/\/|file:\/\/|content:\/\/|ph:\/\/|assets-library:\/\/)/i;
@@ -215,6 +217,9 @@ const MessageRow = memo(function MessageRow({
             },
           ]}
         >
+          {mine && line.steer ? (
+            <Text style={[styles.steerLabel, { color: t.pfg }]}>{str.steer.label}</Text>
+          ) : null}
           {mine ? (
             <Text selectable style={{ color: t.pfg }}>
               {line.text}
@@ -256,6 +261,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 16, gap: 12, flexGrow: 1 },
   textSm: { fontSize: 14 },
+  steerLabel: { marginBottom: 2, fontSize: 12, opacity: 0.8 },
   bubbleWrap: { maxWidth: '100%' },
   assistantBubble: { alignSelf: 'stretch' },
   bubble: { borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },

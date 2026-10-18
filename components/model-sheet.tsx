@@ -4,7 +4,8 @@ import { CheckIcon } from 'react-native-heroicons/outline';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/ui/text';
-import { useConnection, useHermesClient } from '@/contexts/connection-context';
+import { useBotScope, useScopedClient } from '@/contexts/bots-context';
+import { useConnection } from '@/contexts/connection-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { describeHermesError, type ModelSelection } from '@/lib/hermes';
@@ -17,8 +18,9 @@ type ModelSheetProps = {
 };
 
 export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetProps) {
-  const client = useHermesClient();
-  const { defaultModel, modelForSession, setDefaultModel, setSessionModel } = useConnection();
+  // En el chat de un Bot, los modelos y la fijación son los de su perfil.
+  const client = useScopedClient();
+  const { defaultModel, modelForSession, setDefaultModel, setSessionModel, supports } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
   const str = useStrings();
@@ -27,7 +29,8 @@ export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetPro
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [locking, setLocking] = useState(false);
-  const selected = sessionId ? modelForSession(sessionId) : defaultModel;
+  const bot = useBotScope();
+  const selected = sessionId ? modelForSession(sessionId, !bot) : defaultModel;
 
   useEffect(() => {
     if (!visible) return;
@@ -69,7 +72,8 @@ export function ModelSheet({ visible, title, sessionId, onClose }: ModelSheetPro
     setLocking(true);
     setError(null);
     try {
-      await client.lockSessionModel(sessionId, option);
+      // Sin fijación en el servidor, el modelo igual viaja en cada mensaje de esta conversación.
+      if (supports('session_model_lock')) await client.lockSessionModel(sessionId, option);
       setSessionModel(sessionId, option);
       onClose();
     } catch (err) {
