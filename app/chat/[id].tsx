@@ -25,7 +25,8 @@ import type { ReasoningNote } from '@/components/reasoning-fold';
 import { ConnectionDot } from '@/components/connection-dot';
 import { ScreenShell } from '@/components/screen-shell';
 import { Text } from '@/components/ui/text';
-import { RequireConnection, useConnection, useHermesClient } from '@/contexts/connection-context';
+import { BotScope, useBotScope, useScopedClient } from '@/contexts/bots-context';
+import { RequireConnection, useConnection } from '@/contexts/connection-context';
 import { useStrings } from '@/contexts/i18n-context';
 import { useTheme } from '@/contexts/theme-context';
 import { useVoiceLocale } from '@/contexts/voice-locale-context';
@@ -188,6 +189,7 @@ function linesFromMessages(messages: HermesMessage[]): ChatLine[] {
           uri: item.url ?? undefined,
         })),
         notes: [],
+        steer: message.steer,
       });
       continue;
     }
@@ -280,9 +282,13 @@ function stringList(value: unknown): string[] {
 }
 
 export default function ChatScreen() {
+  // Con `?bot=` el chat habla con ese Bot (su perfil) en vez del servidor principal.
+  const params = useLocalSearchParams<{ bot?: string }>();
   return (
     <RequireConnection>
-      <ChatBody />
+      <BotScope bot={oneParam(params.bot)}>
+        <ChatBody />
+      </BotScope>
     </RequireConnection>
   );
 }
@@ -290,9 +296,10 @@ export default function ChatScreen() {
 function ChatBody() {
   const params = useLocalSearchParams<{ id: string; title?: string }>();
   const sessionId = oneParam(params.id);
-  const client = useHermesClient();
+  const client = useScopedClient();
+  const bot = useBotScope();
   const [cached] = useState(() => chatCache.get(client, sessionId));
-  const { modelForSession } = useConnection();
+  const { modelForSession, supports } = useConnection();
   const { theme } = useTheme();
   const t = theme.tokens;
   const str = useStrings();
@@ -323,12 +330,17 @@ function ChatBody() {
   const [approval, setApproval] = useState<PendingApproval | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [streamId, setStreamId] = useState<string | null>(null);
+  // El `run_id` del turno en curso, para ofrecer corregirlo.
+  const [liveRunId, setLiveRunId] = useState<string | null>(null);
+  const [steering, setSteering] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const alive = useRef(true);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toolCount = useRef(0);
   const runIdRef = useRef<string | null>(null);
+  // Correcciones mandadas en este turno, por si Hermes las devuelve sin entregar.
+  const steerIdsRef = useRef<string[]>([]);
   const queueRef = useRef<OutgoingMessage[]>([]);
   const pumpingRef = useRef(false);
   const sendSeq = useRef(0);
@@ -339,8 +351,20 @@ function ChatBody() {
 
   const runningAnywhere = useSessionRunning(sessionId);
   const backgroundRun = runningAnywhere && !sending;
-  const model = modelForSession(sessionId);
+  // Un Bot tiene su propio modelo: el general de la app no lo pisa, solo el elegido en este chat.
+  const model = modelForSession(sessionId, !bot);
   const canSend = draft.trim().length > 0 || pending.length > 0;
+  // Solo texto, con el turno en marcha y sin una aprobación pendiente (Hermes no acepta
+  // correcciones mientras espera tu decisión).
+  const canSteer =
+    supports('run_steer') &&
+    sending &&
+    liveRunId !== null &&
+    status !== null &&
+    !approval &&
+    !steering &&
+    pending.length === 0 &&
+    draft.trim().length > 0;
   const { locale: voiceLocale } = useVoiceLocale();
   const dictation = useVoiceDictation({
     locale: voiceLocale,
@@ -476,11 +500,17 @@ function ChatBody() {
     deltaTimer.current ??= setTimeout(flushDeltas, DELTA_FLUSH_MS);
   }
 
+  function rememberRun(runId: string) {
+    if (runIdRef.current === runId) return;
+    runIdRef.current = runId;
+    setLiveRunId(runId);
+  }
+
   function applyEvent(event: SseEvent, assistantId: string) {
     if (!alive.current) return;
     const name = sseEventName(event);
     const data = event.data;
-    if (typeof data.run_id === 'string' && data.run_id) runIdRef.current = data.run_id;
+    if (typeof data.run_id === 'string' && data.run_id) rememberRun(data.run_id);
     const phase = phaseAfterEvent(name, data);
     if (phase) enterPhase(phase);
     if (name === 'assistant.delta') {
@@ -555,6 +585,10 @@ function ChatBody() {
       setApproval(null);
       setError(failure);
     }
+    if (name === 'run.completed' || name === 'run.cancelled' || name === 'run.failed') {
+      const late = typeof data.pending_steer === 'string' ? data.pending_steer.trim() : '';
+      if (late) settleLateSteer(late, name === 'run.completed');
+    }
     if (name === 'run.completed' || name === 'run.cancelled') {
       const reply = finalAssistantReply(data.messages);
       if (reply.reasoning) {
@@ -590,6 +624,8 @@ function ChatBody() {
     const abort = new AbortController();
     abortRef.current = abort;
     runIdRef.current = null;
+    steerIdsRef.current = [];
+    setLiveRunId(null);
     setApproval(null);
     setStreamId(assistantId);
     setStatus(null);
@@ -685,7 +721,7 @@ function ChatBody() {
           () => client.createRun(sessionId, payload, selection, idempotencyKey, abort.signal),
           waitToRetry,
         );
-        runIdRef.current = runId;
+        rememberRun(runId);
         // Si tocó Detener mientras se creaba, el id recién llega ahora.
         if (abort.signal.aborted) {
           void client.stopRun(runId).catch(() => undefined);
@@ -759,6 +795,7 @@ function ChatBody() {
       if (!alive.current) return;
       flushDeltas();
       setStatus(null);
+      setLiveRunId(null);
       setStreamId((current) => (current === assistantId ? null : current));
       setLines((current) =>
         current.filter((line) => {
@@ -893,6 +930,49 @@ function ChatBody() {
 
   const openMessageMenu = useCallback((id: string, text: string) => setMenu({ id, text }), []);
 
+  async function onSteer() {
+    const runId = runIdRef.current;
+    const text = draft.trim();
+    if (!runId || !text || steering) return;
+    setSteering(true);
+    setError(null);
+    setDraft('');
+    const lineId = `steer-${Date.now()}`;
+    // Va antes de la respuesta en curso: Hermes la entrega a mitad del turno y la respuesta
+    // final llega después.
+    setLines((current) => {
+      const line: ChatLine = { id: lineId, kind: 'user', text, attachments: [], notes: [], steer: true };
+      const index = current.findIndex((item) => item.id === streamId);
+      return index === -1 ? [...current, line] : [...current.slice(0, index), line, ...current.slice(index)];
+    });
+    try {
+      await client.steerRun(runId, text);
+      steerIdsRef.current.push(lineId);
+    } catch (err) {
+      if (!alive.current) return;
+      setLines((current) => current.filter((line) => line.id !== lineId));
+      setDraft((current) => current || text);
+      setError(describeHermesError(err));
+    } finally {
+      if (alive.current) setSteering(false);
+    }
+  }
+
+  /**
+   * El turno terminó antes de que el agente leyera la corrección y Hermes la devolvió. Si
+   * terminó bien la mandamos como mensaje; si se cortó o falló, vuelve al borrador.
+   */
+  function settleLateSteer(text: string, completed: boolean) {
+    const sent = new Set(steerIdsRef.current);
+    steerIdsRef.current = [];
+    setLines((current) => current.filter((line) => !sent.has(line.id)));
+    if (completed) {
+      onSend(text);
+      return;
+    }
+    setDraft((current) => current || text);
+  }
+
   function haltTurn() {
     const runId = runIdRef.current;
     abortRef.current?.abort();
@@ -936,7 +1016,8 @@ function ChatBody() {
   return (
     <ScreenShell
       scroll={false}
-      title={title}
+      // El chat de un Bot se llama "Bot Chat": mostramos el nombre del Bot.
+      title={bot ?? title}
       titleAccessory={<ConnectionDot />}
       onBack={() => router.back()}
       headerRight={
@@ -1066,6 +1147,20 @@ function ChatBody() {
                 </Text>
               </Pressable>
             ))}
+          </View>
+        ) : null}
+        {canSteer ? (
+          <View style={styles.steerRow}>
+            <Text style={[styles.textSm, styles.flex, { color: t.mut }]}>{str.steer.hint}</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                void onSteer();
+              }}
+              style={[styles.retryBtn, { borderColor: t.bd }]}
+            >
+              <Text style={[styles.textSm, { color: t.fg }]}>{str.steer.action}</Text>
+            </Pressable>
           </View>
         ) : null}
         <View
@@ -1248,6 +1343,13 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   retryBtn: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 6 },
+  steerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 12, paddingBottom: 8 },
   chip: {
     flexDirection: 'row',

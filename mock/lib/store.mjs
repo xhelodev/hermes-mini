@@ -1,10 +1,12 @@
 import { IDEMPOTENCY_TTL_MS, MAX_CONCURRENT_RUNS } from './constants.mjs';
 import { randomUUID } from 'node:crypto';
+import { currentProfile } from './profile-scope.mjs';
 
 function getState() {
   if (!globalThis.__hermesMockState) {
     globalThis.__hermesMockState = {
-      sessions: new Map(),
+      // Conversaciones por perfil (`/p/<perfil>/`), como el gateway multiplexado.
+      sessionsByProfile: new Map(),
       runs: new Map(),
       idempotency: new Map(),
       activeRuns: 0,
@@ -22,8 +24,15 @@ export function getModelOptionsOverride() {
   return getState().modelOptionsOverride;
 }
 
+function sessions() {
+  const byProfile = getState().sessionsByProfile;
+  const profile = currentProfile();
+  if (!byProfile.has(profile)) byProfile.set(profile, new Map());
+  return byProfile.get(profile);
+}
+
 export function listSessions() {
-  return [...getState().sessions.values()];
+  return [...sessions().values()];
 }
 
 export function createSession(meta = {}) {
@@ -39,12 +48,12 @@ export function createSession(meta = {}) {
     archived: false,
     messages: [],
   };
-  getState().sessions.set(id, session);
+  sessions().set(id, session);
   return session;
 }
 
 export function getSession(id) {
-  return getState().sessions.get(id) || null;
+  return sessions().get(id) || null;
 }
 
 export function updateSession(id, patch) {
@@ -59,7 +68,7 @@ export function updateSession(id, patch) {
 }
 
 export function deleteSession(id) {
-  return getState().sessions.delete(id);
+  return sessions().delete(id);
 }
 
 export function appendMessage(sessionId, message) {
@@ -125,7 +134,10 @@ export function getRun(runId) {
 export function pushRunEvent(runId, event) {
   const run = getRun(runId);
   if (!run) return null;
-  run.events.push({ ...event, at: Date.now() });
+  const entry = { ...event, at: Date.now() };
+  run.events.push(entry);
+  // Quien siga /events de un run que todavía corre (fault `slowstream`) lo recibe en vivo.
+  for (const notify of run.subscribers ?? []) notify(entry);
   return run;
 }
 
