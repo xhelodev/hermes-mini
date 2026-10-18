@@ -2,7 +2,7 @@
   "expo": {
     "name": "Hermes Mini",
     "slug": "hermes-mini",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "orientation": "portrait",
     "scheme": "hermes-mini",
     "userInterfaceStyle": "automatic",
