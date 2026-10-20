@@ -2,6 +2,10 @@
 
 Cliente de celular para Hermes. Se conecta a la API de Hermes Agent (Expo SDK 57, TypeScript).
 
+## Descarga
+
+Los APK se publican en [Releases](https://github.com/xhelodev/hermes-mini/releases). Cada merge a `main` dispara un build en EAS (workflow `Release`) y el APK queda adjunto a la release. Android pide permitir la instalación de "origen desconocido" la primera vez.
+
 ## Desarrollo
 
 ```bash
@@ -29,10 +33,10 @@ El perfil decide el binario. `--local` no lo cambia.
 
 | Perfil | Binario | Para qué |
 | --- | --- | --- |
-| `preview` | APK (`buildType: apk`) | Instalar a mano en el teléfono |
-| `production` | AAB (`buildType: app-bundle`) | Subir a Play Store |
+| `preview` | APK (`buildType: apk`) | Probar a mano en el teléfono |
+| `production` | APK (`buildType: apk`) | Release pública: la compila el CI al mergear a `main` |
 
-Un build con `--profile preview` siempre escribe `build-*.apk`, aunque la intención sea Play Store. El AAB no se instala directo en el teléfono.
+Ambos perfiles compilan APK con las credenciales remotas de EAS (`credentialsSource: remote`); `production` además sube solo el `versionCode` (`autoIncrement`).
 
 ### Nube
 
@@ -44,32 +48,19 @@ APK:
 npx eas-cli build --profile preview --platform android
 ```
 
-AAB:
-
-```bash
-npx eas-cli build --profile production --platform android
-```
+El perfil `production` lo dispara el CI al mergear a `main` (`.github/workflows/release.yml`): compila en EAS, descarga el APK y lo adjunta a una GitHub Release.
 
 ### Local
 
-Compila en esta PC. Hace falta Android SDK y JDK. Las credenciales siguen saliendo de EAS (`credentials source: remote`). La primera build de `production` crea el keystore de subida y lo guarda en EAS; esa clave firma las actualizaciones de `dev.carpincho.hermesmini`.
+Compila en esta PC. Hace falta Android SDK y JDK. Las credenciales siguen saliendo de EAS (`credentials source: remote`). La misma clave firma todos los builds de `dev.carpincho.hermesmini`, así el APK nuevo se instala como actualización encima del anterior.
 
 En Nobara `/tmp` es un tmpfs de ~7,7 GB (el 50% de los 15 GB de RAM), no el SSD. El build local copia el proyecto ahí y, al compilar nativo, llena esa RAM aunque el disco tenga cientos de GB libres. El error es `No space left on device` en una tarea de Gradle (`react-native-gesture-handler` / CMake). Agrandar el tmpfs empuja el build a swap y puede congelar el escritorio.
 
 Hay que apuntar el temporal al disco.
 
-APK:
-
 ```bash
 mkdir -p "$HOME/tmp"
 TMPDIR=$HOME/tmp npx eas-cli build --local --profile preview --platform android
-```
-
-AAB:
-
-```bash
-mkdir -p "$HOME/tmp"
-TMPDIR=$HOME/tmp npx eas-cli build --local --profile production --platform android
 ```
 
 Cada build local deja varios GB en `~/tmp`; se pueden borrar cuando el APK o el AAB ya está generado. El CLI imprime la ruta del binario al terminar. `*.apk` y `*.aab` están en `.gitignore`.
@@ -78,7 +69,7 @@ Durante el build son normales los avisos `deprecated` de `react-native-reanimate
 
 ### Código de versión (versionCode)
 
-Play Store rechaza un AAB cuyo `versionCode` ya se subió (`Ya se usó el código de la versión N`). Con `appVersionSource: remote` el contador vive en EAS, no en `app.json`. El perfil `production` tiene `autoIncrement: true`, así que cada build (nube o `--local`) lo sube solo.
+Con `appVersionSource: remote` el contador vive en EAS, no en `app.json`. El perfil `production` tiene `autoIncrement: true`, así que cada build (nube o `--local`) lo sube solo — Android no instala un APK con `versionCode` inferior al que ya tiene.
 
 Ver o fijar el contador a mano:
 

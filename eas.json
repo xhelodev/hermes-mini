@@ -6,7 +6,7 @@
   "build": {
     "preview": {
       "distribution": "internal",
-      "credentialsSource": "local",
+      "credentialsSource": "remote",
       "android": {
         "buildType": "apk"
       },
@@ -16,9 +16,9 @@
     },
     "production": {
       "autoIncrement": true,
-      "credentialsSource": "local",
+      "credentialsSource": "remote",
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk"
       },
       "env": {
         "EXPO_NO_TELEMETRY": "1"
