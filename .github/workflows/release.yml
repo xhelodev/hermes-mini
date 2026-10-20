@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  EXPO_NO_TELEMETRY: '1'
+
+jobs:
+  release-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - uses: expo/expo-github-action@v9
+        with:
+          eas-version: 'latest'
+          token: ${{ secrets.EXPO_TOKEN }}
+          packager: 'npm'
+      - name: Build APK on EAS
+        run: eas build --platform android --profile production --non-interactive --wait --json > eas-build.json
+      - name: Download APK
+        run: |
+          BUILD_URL=$(jq -r '.[] | select(.platform == "android") | .artifacts.buildUrl' eas-build.json)
+          if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
+            echo '::error::EAS no devolvió URL del APK'
+            cat eas-build.json
+            exit 1
+          fi
+          echo "Build: $BUILD_URL"
+          VERSION=$(jq -r '.expo.version' app.json)
+          APK="hermes-mini-v${VERSION}-b${{ github.run_number }}.apk"
+          curl -sSL "$BUILD_URL" -o "$APK"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "APK=$APK" >> "$GITHUB_ENV"
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${VERSION}-b${{ github.run_number }}" "$APK" \
+            --title "Hermes Mini v${VERSION} (build ${{ github.run_number }})" \
+            --generate-notes
