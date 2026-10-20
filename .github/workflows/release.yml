@@ -29,7 +29,7 @@ jobs:
         run: eas build --platform android --profile production --non-interactive --wait --json > eas-build.json
       - name: Download APK
         run: |
-          BUILD_URL=$(jq -r '.[] | select(.platform == "android") | .artifacts.buildUrl' eas-build.json)
+          BUILD_URL=$(jq -r '.[0].artifacts.buildUrl // .[0].artifacts.applicationArchiveUrl // empty' eas-build.json)
           if [ -z "$BUILD_URL" ] || [ "$BUILD_URL" = "null" ]; then
             echo '::error::EAS no devolvió URL del APK'
             cat eas-build.json
@@ -38,7 +38,8 @@ jobs:
           echo "Build: $BUILD_URL"
           VERSION=$(jq -r '.expo.version' app.json)
           APK="hermes-mini-v${VERSION}-b${{ github.run_number }}.apk"
-          curl -sSL "$BUILD_URL" -o "$APK"
+          curl -fsSL "$BUILD_URL" -o "$APK"
+          echo "APK descargado: $(du -h "$APK" | cut -f1)"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "APK=$APK" >> "$GITHUB_ENV"
       - name: Create GitHub Release
